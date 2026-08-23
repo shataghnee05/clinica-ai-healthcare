@@ -45,13 +45,15 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.6-flash"
-    # Phase 2B: Notification / SMTP settings (all optional – defaults to no-op)
+    # Phase 2B & Email Notification Settings (Resend, SMTP, Mock)
+    EMAIL_PROVIDER: str = "resend"
+    RESEND_API_KEY: str = ""
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    NOTIFICATION_FROM_EMAIL: str = "noreply@clinica.local"
-    NOTIFICATION_ENABLED: bool = False
+    NOTIFICATION_FROM_EMAIL: str = "onboarding@resend.dev"
+    NOTIFICATION_ENABLED: bool = True
 
     # Google OAuth 2.0 & Google Calendar settings
     GOOGLE_CLIENT_ID: str = ""

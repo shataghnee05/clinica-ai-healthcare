@@ -181,10 +181,12 @@ def confirm_appointment(
     db: Session = Depends(get_db),
 ):
     appointment = AppointmentService.confirm_appointment(db, data, current_user.id)
-    if hasattr(appointment, "_enqueued_job_id") and appointment._enqueued_job_id:
-        background_tasks.add_task(run_job_in_background, appointment._enqueued_job_id)
-    if hasattr(appointment, "_calendar_job_id") and appointment._calendar_job_id:
-        background_tasks.add_task(run_job_in_background, appointment._calendar_job_id)
+    # Non-blocking background job dispatch
+    pending_jobs = db.query(BackgroundJob).filter(
+        BackgroundJob.status == "PENDING"
+    ).order_by(BackgroundJob.created_at.desc()).limit(10).all()
+    for job in pending_jobs:
+        background_tasks.add_task(run_job_in_background, job.id)
 
     return {
         "id": appointment.id,
@@ -227,8 +229,12 @@ def cancel_appointment(
 ):
     reason = data.reason if data else None
     appointment = AppointmentService.cancel_appointment(db, appointment_id, current_user, reason=reason)
-    if hasattr(appointment, "_calendar_job_id") and appointment._calendar_job_id:
-        background_tasks.add_task(run_job_in_background, appointment._calendar_job_id)
+    # Non-blocking background job dispatch
+    pending_jobs = db.query(BackgroundJob).filter(
+        BackgroundJob.status == "PENDING"
+    ).order_by(BackgroundJob.created_at.desc()).limit(10).all()
+    for job in pending_jobs:
+        background_tasks.add_task(run_job_in_background, job.id)
     return {"status": "OK", "message": "Appointment cancelled successfully"}
 
 @api_router.get("/admin/doctors", response_model=List[DoctorOut])

@@ -197,7 +197,8 @@ class JobManager:
         to_email = job.payload.get("to_email", "")
         subject = job.payload.get("subject", "")
         body = job.payload.get("body", "")
-        NotificationService.execute_notification_job(db, notification_id, to_email, subject, body)
+        html_body = job.payload.get("html_body")
+        NotificationService.execute_notification_job(db, notification_id, to_email, subject, body, html_body=html_body)
         job.result = {"delivered": True}
         db.commit()
 
@@ -209,7 +210,8 @@ class JobManager:
         to_email = job.payload.get("to_email", "")
         subject = job.payload.get("subject", "")
         body = job.payload.get("body", "")
-        NotificationService.execute_medication_reminder_job(db, reminder_id, to_email, subject, body)
+        html_body = job.payload.get("html_body")
+        NotificationService.execute_medication_reminder_job(db, reminder_id, to_email, subject, body, html_body=html_body)
         job.result = {"delivered": True}
         db.commit()
 

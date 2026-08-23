@@ -554,6 +554,13 @@ class AppointmentService:
             except Exception as e:
                 log_event("AI_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
 
+            # Enqueue Confirmation Notification Email Job (failure-tolerant)
+            try:
+                from app.notification_service import NotificationService
+                NotificationService.notify_appointment_confirmation(db, appointment)
+            except Exception as e:
+                log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
+
             # Enqueue Google Calendar Sync Background Job (failure-tolerant)
             try:
                 cal_job = JobManager.enqueue_job(

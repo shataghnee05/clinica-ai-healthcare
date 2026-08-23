@@ -1,19 +1,25 @@
 """
-Phase 2B — Provider-independent Notification Service.
+Provider-independent Notification & Email Service for Clinica.
 
-Design contract:
-- Email send failures NEVER raise exceptions to callers.
-- Appointment / Consultation state is NEVER modified here.
-- All outbound communication is best-effort and failure-tolerant.
+Features:
+- Backed by Resend REST API (with SMTP and Mock provider fallbacks)
+- Sends transactional emails asynchronously through BackgroundJob system
+- Non-blocking: API requests return immediately
+- Exponential backoff retries on email delivery failures
+- Comprehensive error tracking in database (Notification & BackgroundJob tables)
+- Rich responsive HTML and accessible plain-text templates
+
+Supported Notifications:
+1. Appointment Confirmation (Patient & Doctor)
+2. Appointment Cancellation (Patient & Doctor)
+3. Doctor Leave Notification (Affected Patients & Doctor)
+4. Appointment Reminder (Upcoming consultation)
+5. Medication Reminder (Prescribed patient doses)
 """
 import logging
-import smtplib
 import uuid
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-from typing import Optional, Tuple
-
+from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -29,48 +35,21 @@ from app.models import (
     DoctorLeave,
     Medication,
     MedicationReminder,
+    MedicationReminderStatus,
+)
+from app.email_providers import get_email_provider
+from app.email_templates import (
+    template_appointment_confirmation,
+    template_appointment_cancellation,
+    template_doctor_leave,
+    template_appointment_reminder,
+    template_medication_reminder,
 )
 
 logger = logging.getLogger(__name__)
 
 
-# ── Low-level SMTP sender ────────────────────────────────────────────────────
-
-def _send_email(to_email: str, subject: str, body: str) -> Tuple[bool, Optional[str]]:
-    """
-    Send a plain-text email via SMTP.
-    Returns (success, error_message).
-    Never raises — failure is logged and returned as a flag.
-    """
-    if not settings.NOTIFICATION_ENABLED or not settings.SMTP_HOST:
-        # No-op when unconfigured — this is intentional for local / test environments
-        logger.debug("Notification skipped (NOTIFICATION_ENABLED=False or SMTP_HOST empty): %s", subject)
-        return True, None  # treat as success so job completes cleanly
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.NOTIFICATION_FROM_EMAIL
-        msg["To"] = to_email
-        msg.attach(MIMEText(body, "plain"))
-
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
-            server.starttls()
-            if settings.SMTP_USER and settings.SMTP_PASSWORD:
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.NOTIFICATION_FROM_EMAIL, [to_email], msg.as_string())
-
-        log_event("EMAIL_SENT", {"to": to_email, "subject": subject})
-        return True, None
-
-    except Exception as exc:
-        error_msg = str(exc)
-        logger.error("Email send failed to %s: %s", to_email, error_msg)
-        log_event("EMAIL_FAILED", {"to": to_email, "subject": subject, "error": error_msg})
-        return False, error_msg
-
-
-# ── Notification record helpers ───────────────────────────────────────────────
+# ── Notification Record & Job Helpers ────────────────────────────────────────
 
 def _create_notification(
     db: Session,
@@ -110,37 +89,81 @@ def _enqueue_notification_job(db: Session, job_type: JobType, payload: dict) -> 
     return job
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# ── Notification Service Core ────────────────────────────────────────────────
 
 class NotificationService:
     """
-    Enqueues notification background jobs and creates Notification inbox records.
-    All methods are safe to call inside appointment transactions —
-    any failure here must not roll back appointment state.
+    Provider-independent notification dispatcher.
+    Enqueues notification background jobs and creates in-app notifications.
+    Fault-tolerant: failures here NEVER roll back appointment transactions.
     """
 
     @staticmethod
     def notify_appointment_confirmation(db: Session, appointment: Appointment) -> Optional[str]:
-        """Create notification + enqueue email job for appointment confirmation."""
+        """
+        Send confirmation email and in-app notification when an appointment is confirmed.
+        Notifies patient with appointment details and doctor with agenda update.
+        """
         try:
             patient = appointment.patient
-            doctor_name = appointment.doctor.user.full_name if appointment.doctor and appointment.doctor.user else "your doctor"
-            start = appointment.slot.start_time.strftime("%Y-%m-%d %H:%M") if appointment.slot else "scheduled time"
-            title = "Appointment Confirmed"
-            body = (
-                f"Dear {patient.full_name},\n\n"
-                f"Your appointment with {doctor_name} has been confirmed.\n"
-                f"Date/Time: {start}\n\n"
-                f"Please arrive 10 minutes early.\n\nClinïca Team"
+            doctor_user = appointment.doctor.user if appointment.doctor and appointment.doctor.user else None
+            doctor_name = f"Dr. {doctor_user.full_name}" if doctor_user else "Doctor"
+            specialization = appointment.doctor.specialization if appointment.doctor else "General"
+            start_str = appointment.slot.start_time.strftime("%A, %B %d, %Y at %I:%M %p UTC") if appointment.slot and appointment.slot.start_time else "Scheduled Time"
+
+            # 1. Patient Notification
+            subject, plain_text, html_content = template_appointment_confirmation(
+                patient_name=patient.full_name if patient else "Patient",
+                doctor_name=doctor_name,
+                specialization=specialization,
+                date_time_str=start_str,
+                symptoms=appointment.symptoms or "Routine consultation",
+                appointment_id=appointment.id,
             )
-            notif = _create_notification(db, patient.id, NotificationType.APPOINTMENT_CONFIRMATION, title, body, appointment.id)
+
+            notif = _create_notification(
+                db=db,
+                user_id=patient.id,
+                notif_type=NotificationType.APPOINTMENT_CONFIRMATION,
+                title=subject,
+                body=plain_text,
+                reference_id=appointment.id,
+            )
             job = _enqueue_notification_job(db, JobType.NOTIFY_APPOINTMENT_CONFIRMATION, {
                 "notification_id": notif.id,
                 "to_email": patient.email,
-                "subject": title,
-                "body": body,
+                "subject": subject,
+                "body": plain_text,
+                "html_body": html_content,
             })
             notif.job_id = job.id
+
+            # 2. Doctor Notification (if doctor account exists)
+            if doctor_user and doctor_user.email:
+                doc_title = f"New Appointment Booked: {patient.full_name if patient else 'Patient'}"
+                doc_body = (
+                    f"Dear {doctor_name},\n\n"
+                    f"A new appointment has been confirmed with patient {patient.full_name if patient else 'Patient'}.\n"
+                    f"Date & Time: {start_str}\n"
+                    f"Symptoms: {appointment.symptoms}\n\n"
+                    f"Reference: {appointment.id}\nClinïca Portal"
+                )
+                doc_notif = _create_notification(
+                    db=db,
+                    user_id=doctor_user.id,
+                    notif_type=NotificationType.APPOINTMENT_CONFIRMATION,
+                    title=doc_title,
+                    body=doc_body,
+                    reference_id=appointment.id,
+                )
+                doc_job = _enqueue_notification_job(db, JobType.NOTIFY_APPOINTMENT_CONFIRMATION, {
+                    "notification_id": doc_notif.id,
+                    "to_email": doctor_user.email,
+                    "subject": doc_title,
+                    "body": doc_body,
+                })
+                doc_notif.job_id = doc_job.id
+
             db.commit()
             log_event("NOTIFICATION_ENQUEUED", {"type": "CONFIRMATION", "appointment_id": appointment.id})
             return job.id
@@ -159,27 +182,66 @@ class NotificationService:
         reason: Optional[str] = None,
         cancelled_by_leave: bool = False,
     ) -> Optional[str]:
-        """Create notification + enqueue email job for appointment cancellation."""
+        """
+        Send cancellation email and in-app notification when an appointment is cancelled.
+        """
         try:
             patient = appointment.patient
-            doctor_name = appointment.doctor.user.full_name if appointment.doctor and appointment.doctor.user else "your doctor"
-            start = appointment.slot.start_time.strftime("%Y-%m-%d %H:%M") if appointment.slot else "scheduled time"
-            reason_text = f"\nReason: {reason}" if reason else ""
-            leave_text = "\nThis cancellation was due to the doctor's approved leave." if cancelled_by_leave else ""
-            title = "Appointment Cancelled"
-            body = (
-                f"Dear {patient.full_name},\n\n"
-                f"Your appointment with {doctor_name} on {start} has been cancelled.{reason_text}{leave_text}\n\n"
-                f"Please rebook at your convenience.\n\nClinïca Team"
+            doctor_user = appointment.doctor.user if appointment.doctor and appointment.doctor.user else None
+            doctor_name = f"Dr. {doctor_user.full_name}" if doctor_user else "your doctor"
+            start_str = appointment.slot.start_time.strftime("%A, %B %d, %Y at %I:%M %p UTC") if appointment.slot and appointment.slot.start_time else "Scheduled Time"
+
+            # 1. Patient Notification
+            subject, plain_text, html_content = template_appointment_cancellation(
+                patient_name=patient.full_name if patient else "Patient",
+                doctor_name=doctor_name,
+                date_time_str=start_str,
+                reason=reason or "Schedule update",
+                cancelled_by_leave=cancelled_by_leave,
             )
-            notif = _create_notification(db, patient.id, NotificationType.APPOINTMENT_CANCELLATION, title, body, appointment.id)
+
+            notif = _create_notification(
+                db=db,
+                user_id=patient.id,
+                notif_type=NotificationType.APPOINTMENT_CANCELLATION,
+                title=subject,
+                body=plain_text,
+                reference_id=appointment.id,
+            )
             job = _enqueue_notification_job(db, JobType.NOTIFY_APPOINTMENT_CANCELLATION, {
                 "notification_id": notif.id,
                 "to_email": patient.email,
-                "subject": title,
-                "body": body,
+                "subject": subject,
+                "body": plain_text,
+                "html_body": html_content,
             })
             notif.job_id = job.id
+
+            # 2. Doctor Notification
+            if doctor_user and doctor_user.email:
+                doc_title = f"Appointment Cancelled: {patient.full_name if patient else 'Patient'}"
+                doc_body = (
+                    f"Dear {doctor_name},\n\n"
+                    f"The appointment on {start_str} with {patient.full_name if patient else 'Patient'} has been cancelled.\n"
+                    f"Reason: {reason or 'Patient cancellation'}\n\n"
+                    f"The slot has been restored to available status."
+                )
+                doc_notif = _create_notification(
+                    db=db,
+                    user_id=doctor_user.id,
+                    notif_type=NotificationType.APPOINTMENT_CANCELLATION,
+                    title=doc_title,
+                    body=doc_body,
+                    reference_id=appointment.id,
+                )
+                doc_job = _enqueue_notification_job(db, JobType.NOTIFY_APPOINTMENT_CANCELLATION, {
+                    "notification_id": doc_notif.id,
+                    "to_email": doctor_user.email,
+                    "subject": doc_title,
+                    "body": doc_body,
+                })
+                doc_notif.job_id = doc_job.id
+
             db.commit()
             log_event("NOTIFICATION_ENQUEUED", {"type": "CANCELLATION", "appointment_id": appointment.id})
             return job.id
@@ -197,25 +259,37 @@ class NotificationService:
         appointment: Appointment,
         leave: DoctorLeave,
     ) -> Optional[str]:
-        """Notify a patient whose appointment was cancelled due to doctor leave."""
+        """
+        Notify patient when their appointment is cancelled due to doctor approved leave.
+        """
         try:
             patient = appointment.patient
-            doctor_name = appointment.doctor.user.full_name if appointment.doctor and appointment.doctor.user else "your doctor"
-            start = appointment.slot.start_time.strftime("%Y-%m-%d %H:%M") if appointment.slot else "scheduled time"
-            title = "Appointment Cancelled – Doctor on Leave"
-            body = (
-                f"Dear {patient.full_name},\n\n"
-                f"We regret to inform you that your appointment with {doctor_name} on {start} "
-                f"has been cancelled due to the doctor's approved leave "
-                f"({leave.start_date} – {leave.end_date}).\n\n"
-                f"Please rebook at your earliest convenience.\n\nClinïca Team"
+            doctor_user = appointment.doctor.user if appointment.doctor and appointment.doctor.user else None
+            doctor_name = f"Dr. {doctor_user.full_name}" if doctor_user else "your doctor"
+            start_str = appointment.slot.start_time.strftime("%A, %B %d, %Y at %I:%M %p UTC") if appointment.slot and appointment.slot.start_time else "Scheduled Time"
+            leave_period = f"{leave.start_date} to {leave.end_date}"
+
+            subject, plain_text, html_content = template_doctor_leave(
+                patient_name=patient.full_name if patient else "Patient",
+                doctor_name=doctor_name,
+                date_time_str=start_str,
+                leave_period=leave_period,
             )
-            notif = _create_notification(db, patient.id, NotificationType.DOCTOR_LEAVE, title, body, appointment.id)
+
+            notif = _create_notification(
+                db=db,
+                user_id=patient.id,
+                notif_type=NotificationType.DOCTOR_LEAVE,
+                title=subject,
+                body=plain_text,
+                reference_id=appointment.id,
+            )
             job = _enqueue_notification_job(db, JobType.NOTIFY_DOCTOR_LEAVE, {
                 "notification_id": notif.id,
                 "to_email": patient.email,
-                "subject": title,
-                "body": body,
+                "subject": subject,
+                "body": plain_text,
+                "html_body": html_content,
             })
             notif.job_id = job.id
             db.flush()
@@ -230,7 +304,9 @@ class NotificationService:
         db: Session,
         leave: DoctorLeave,
     ) -> Optional[str]:
-        """Notify the doctor that their leave request has been approved by admin."""
+        """
+        Notify doctor that their leave request has been approved by admin.
+        """
         try:
             doc_user = leave.doctor.user if leave.doctor else None
             if not doc_user:
@@ -239,13 +315,21 @@ class NotificationService:
             body = (
                 f"Dear Dr. {doc_user.full_name},\n\n"
                 f"Your leave application for the period {leave.start_date} to {leave.end_date} "
-                f"has been APPROVED by the hospital administration.\n\n"
+                f"has been APPROVED by hospital administration.\n\n"
                 f"Any conflicting patient appointments have been automatically cancelled and patients notified.\n\n"
-                f"Clinica Administration"
+                f"Clinïca Administration"
             )
             notif = _create_notification(db, doc_user.id, NotificationType.DOCTOR_LEAVE_APPROVAL, title, body, leave.id)
+            if doc_user.email:
+                job = _enqueue_notification_job(db, JobType.NOTIFY_DOCTOR_LEAVE, {
+                    "notification_id": notif.id,
+                    "to_email": doc_user.email,
+                    "subject": title,
+                    "body": body,
+                })
+                notif.job_id = job.id
             db.flush()
-            log_event("NOTIFICATION_ENQUEUED", {"type": "DOCTOR_LEAVE_APPROVAL", "leave_id": leave.id, "doctor_id": leave.doctor_id})
+            log_event("NOTIFICATION_ENQUEUED", {"type": "DOCTOR_LEAVE_APPROVAL", "leave_id": leave.id})
             return notif.id
         except Exception as exc:
             logger.error("Failed to enqueue doctor leave approval notification: %s", exc)
@@ -257,7 +341,9 @@ class NotificationService:
         leave: DoctorLeave,
         reason: str,
     ) -> Optional[str]:
-        """Notify the doctor that their leave request was rejected by admin with a reason."""
+        """
+        Notify doctor that their leave request was rejected by admin.
+        """
         try:
             doc_user = leave.doctor.user if leave.doctor else None
             if not doc_user:
@@ -267,15 +353,66 @@ class NotificationService:
                 f"Dear Dr. {doc_user.full_name},\n\n"
                 f"Your leave application for {leave.start_date} to {leave.end_date} was NOT approved by administration.\n\n"
                 f"Reason from Administration:\n\"{reason}\"\n\n"
-                f"Please contact the administrative office if you need further clarification.\n\n"
-                f"Clinica Administration"
+                f"Please contact administration if you require further details.\n\n"
+                f"Clinïca Administration"
             )
             notif = _create_notification(db, doc_user.id, NotificationType.DOCTOR_LEAVE_REJECTION, title, body, leave.id)
+            if doc_user.email:
+                job = _enqueue_notification_job(db, JobType.NOTIFY_DOCTOR_LEAVE, {
+                    "notification_id": notif.id,
+                    "to_email": doc_user.email,
+                    "subject": title,
+                    "body": body,
+                })
+                notif.job_id = job.id
             db.flush()
-            log_event("NOTIFICATION_ENQUEUED", {"type": "DOCTOR_LEAVE_REJECTION", "leave_id": leave.id, "doctor_id": leave.doctor_id})
+            log_event("NOTIFICATION_ENQUEUED", {"type": "DOCTOR_LEAVE_REJECTION", "leave_id": leave.id})
             return notif.id
         except Exception as exc:
             logger.error("Failed to enqueue doctor leave rejection notification: %s", exc)
+            return None
+
+    @staticmethod
+    def notify_appointment_reminder(db: Session, appointment: Appointment) -> Optional[str]:
+        """
+        Send upcoming appointment reminder notification to patient and doctor.
+        """
+        try:
+            patient = appointment.patient
+            doctor_user = appointment.doctor.user if appointment.doctor and appointment.doctor.user else None
+            doctor_name = f"Dr. {doctor_user.full_name}" if doctor_user else "your doctor"
+            specialization = appointment.doctor.specialization if appointment.doctor else "General"
+            start_str = appointment.slot.start_time.strftime("%A, %B %d, %Y at %I:%M %p UTC") if appointment.slot and appointment.slot.start_time else "Scheduled Time"
+
+            subject, plain_text, html_content = template_appointment_reminder(
+                patient_name=patient.full_name if patient else "Patient",
+                doctor_name=doctor_name,
+                specialization=specialization,
+                date_time_str=start_str,
+                appointment_id=appointment.id,
+            )
+
+            notif = _create_notification(
+                db=db,
+                user_id=patient.id,
+                notif_type=NotificationType.APPOINTMENT_REMINDER,
+                title=subject,
+                body=plain_text,
+                reference_id=appointment.id,
+            )
+            job = _enqueue_notification_job(db, JobType.NOTIFY_APPOINTMENT_REMINDER, {
+                "notification_id": notif.id,
+                "to_email": patient.email,
+                "subject": subject,
+                "body": plain_text,
+                "html_body": html_content,
+            })
+            notif.job_id = job.id
+            db.commit()
+            log_event("NOTIFICATION_ENQUEUED", {"type": "APPOINTMENT_REMINDER", "appointment_id": appointment.id})
+            return job.id
+        except Exception as exc:
+            logger.error("Failed to enqueue appointment reminder notification: %s", exc)
             return None
 
     @staticmethod
@@ -284,24 +421,26 @@ class NotificationService:
         reminders: list,   # list[MedicationReminder]
         patient: User,
     ) -> int:
-        """Enqueue MEDICATION_REMINDER jobs for each MedicationReminder row."""
+        """
+        Enqueue MEDICATION_REMINDER background jobs for each MedicationReminder record.
+        """
         count = 0
         for reminder in reminders:
             try:
                 med = reminder.medication
-                title = f"Medication Reminder: {med.name}"
-                body = (
-                    f"Dear {patient.full_name},\n\n"
-                    f"This is a reminder to take your medication:\n"
-                    f"  {med.name} — {med.dosage} ({reminder.dose_label})\n"
-                    f"  Instructions: {med.instructions or 'As directed'}\n\n"
-                    f"Clinïca Team"
+                subject, plain_text, html_content = template_medication_reminder(
+                    patient_name=patient.full_name,
+                    medication_name=med.name,
+                    dosage=med.dosage,
+                    dose_label=reminder.dose_label,
+                    instructions=med.instructions or "",
                 )
                 job = _enqueue_notification_job(db, JobType.MEDICATION_REMINDER, {
                     "reminder_id": reminder.id,
                     "to_email": patient.email,
-                    "subject": title,
-                    "body": body,
+                    "subject": subject,
+                    "body": plain_text,
+                    "html_body": html_content,
                 })
                 reminder.job_id = job.id
                 count += 1
@@ -309,41 +448,67 @@ class NotificationService:
                 logger.error("Failed to enqueue medication reminder %s: %s", reminder.id, exc)
         return count
 
-    # ── Job execution helpers (called by JobManager) ─────────────────────────
+    # ── Job Execution Handlers (Executed by Background Job Workers) ──────────
 
     @staticmethod
-    def execute_notification_job(db: Session, notification_id: str, to_email: str, subject: str, body: str) -> None:
+    def execute_notification_job(
+        db: Session,
+        notification_id: str,
+        to_email: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None,
+    ) -> None:
         """
-        Send the email and update the Notification record.
-        Raises on failure so JobManager can retry.
+        Execute an email delivery job via the configured Email Provider.
+        Updates Notification status and records errors on failure for retry.
         """
         notif = db.query(Notification).filter(Notification.id == notification_id).first()
         if not notif and notification_id:
-            raise ValueError(f"Notification {notification_id} not found")
+            raise ValueError(f"Notification record {notification_id} not found")
 
-        success, error = _send_email(to_email, subject, body)
+        provider = get_email_provider()
+        success, error = provider.send_email(to_email, subject, body, html_body=html_body)
+
         if notif:
             notif.email_sent = success
             notif.email_error = error
-        # If email fails, re-raise so JobManager retries — but Notification record is still saved
+            db.commit()
+
         if not success and error:
-            raise RuntimeError(f"Email send failed: {error}")
+            # Re-raise so JobManager increments attempts and schedules exponential backoff
+            raise RuntimeError(f"Email delivery failed: {error}")
 
     @staticmethod
-    def execute_medication_reminder_job(db: Session, reminder_id: str, to_email: str, subject: str, body: str) -> None:
-        """Send medication reminder email and update MedicationReminder row."""
+    def execute_medication_reminder_job(
+        db: Session,
+        reminder_id: str,
+        to_email: str,
+        subject: str,
+        body: str,
+        html_body: Optional[str] = None,
+    ) -> None:
+        """
+        Execute a medication reminder email delivery job.
+        Updates MedicationReminder status to SENT or FAILED.
+        """
         reminder = db.query(MedicationReminder).filter(MedicationReminder.id == reminder_id).first()
         if not reminder:
-            raise ValueError(f"Medication reminder {reminder_id} not found")
+            raise ValueError(f"Medication reminder record {reminder_id} not found")
 
-        success, error = _send_email(to_email, subject, body)
+        provider = get_email_provider()
+        success, error = provider.send_email(to_email, subject, body, html_body=html_body)
+
         if success:
-            from app.models import MedicationReminderStatus
             reminder.status = MedicationReminderStatus.SENT
             reminder.sent_at = datetime.utcnow()
+            reminder.error_message = None
         else:
-            from app.models import MedicationReminderStatus
             reminder.status = MedicationReminderStatus.FAILED
             reminder.error_message = error
+
+        db.commit()
+
         if not success and error:
-            raise RuntimeError(f"Medication reminder email failed: {error}")
+            # Re-raise so JobManager increments attempts and schedules exponential backoff
+            raise RuntimeError(f"Medication reminder delivery failed: {error}")
