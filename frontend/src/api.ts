@@ -13,7 +13,7 @@ import type {
   GoogleCalendarStatus,
 } from "./types";
 
-const envBase = import.meta.env.VITE_API_BASE_URL;
+const envBase = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
 const API_BASE = envBase ? `${envBase.replace(/\/$/, "")}/api/v1` : "/api/v1";
 
 export function getToken(): string | null {
