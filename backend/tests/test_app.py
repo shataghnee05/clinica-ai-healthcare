@@ -1,5 +1,6 @@
 import os
 import sys
+import secrets
 import concurrent.futures
 from datetime import datetime, timedelta, date, time
 import uuid
@@ -17,6 +18,7 @@ from app.config import settings
 from app.models import get_db, Slot, SlotStatus, User, UserRole
 from app.security import get_password_hash
 
+TEST_DYNAMIC_PASS = f"TestPass_{secrets.token_hex(8)}!"
 
 from sqlalchemy.pool import NullPool
 
@@ -47,23 +49,24 @@ def admin_credentials():
     admin_id = str(uuid.uuid4())
     rand_suffix = str(int(datetime.utcnow().timestamp()))
     email = f"test_admin_{rand_suffix}_{admin_id[:6]}@test.com"
-    password = f"TestAdminSecurePass!{rand_suffix}"
+    password = f"TestAdminSecurePass!{secrets.token_hex(8)}"
     db = TestingSessionLocal()
     try:
-        admin_user = User(
-            id=admin_id,
-            email=email,
-            password_hash=get_password_hash(password),
-            full_name="Dynamic Test Administrator",
-            role=UserRole.ADMIN,
-            accepted_insurance=["BlueCross", "Aetna", "UnitedHealthcare", "Cigna"],
-        )
-        db.add(admin_user)
-        db.commit()
+        existing = db.query(User).filter(User.email == email).first()
+        if not existing:
+            admin_user = User(
+                id=admin_id,
+                email=email,
+                password_hash=get_password_hash(password),
+                full_name="Dynamic Admin",
+                role=UserRole.ADMIN,
+                accepted_insurance=["BlueCross", "Aetna", "UnitedHealthcare", "Cigna"],
+            )
+            db.add(admin_user)
+            db.commit()
     finally:
         db.close()
-
-    yield {"email": email, "password": password, "user_id": admin_id}
+    return {"email": email, "password": password, "user_id": admin_id}
 
     db_cleanup = TestingSessionLocal()
     try:
@@ -91,7 +94,7 @@ def test_auth_registration_and_rbac():
 
     res_reg = client.post("/api/v1/auth/register", json={
         "email": patient_email,
-        "password": "Password123!",
+        "password": TEST_DYNAMIC_PASS,
         "full_name": "Test Patient",
         "accepted_insurance": ["Aetna"]
     })
@@ -116,7 +119,7 @@ def test_admin_doctor_lifecycle_and_working_hours(admin_headers):
 
     res_create = client.post("/api/v1/admin/doctors", headers=admin_headers, json={
         "email": doc_email,
-        "password": "DocPassword123!",
+        "password": TEST_DYNAMIC_PASS,
         "full_name": "Dr. Testing Specialist",
         "specialization": "Neurology",
         "bio": "Expert in neurological conditions",
@@ -173,7 +176,7 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
 
     res_create = client.post("/api/v1/admin/doctors", headers=admin_headers, json={
         "email": doc_email,
-        "password": "DocPassword123!",
+        "password": TEST_DYNAMIC_PASS,
         "full_name": "Dr. 20-Thread Race Condition Test",
         "specialization": "Cardiology",
         "bio": "Cardiology specialist for high concurrency tests",
@@ -208,7 +211,7 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
     patient_ids = []
 
     # Bulk create 20 test patients for concurrent execution
-    fixed_hash = get_password_hash("Password123!")
+    fixed_hash = get_password_hash(TEST_DYNAMIC_PASS)
     db = TestingSessionLocal()
     try:
         users_to_add = []
@@ -290,7 +293,7 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
     # Doctor agenda check
     res_doc_login = client.post("/api/v1/auth/login", json={
         "email": doc_email,
-        "password": "DocPassword123!"
+        "password": TEST_DYNAMIC_PASS
     })
     assert res_doc_login.status_code == 200
     doc_token = res_doc_login.json()["access_token"]
@@ -317,7 +320,7 @@ def test_expired_slot_hold_reclamation(admin_headers):
 
     res_create = client.post("/api/v1/admin/doctors", headers=admin_headers, json={
         "email": doc_email,
-        "password": "DocPassword123!",
+        "password": TEST_DYNAMIC_PASS,
         "full_name": "Dr. Expired Hold Test",
         "specialization": "General Medicine",
         "bio": "Test doctor for expired slot hold recovery",
@@ -349,7 +352,7 @@ def test_expired_slot_hold_reclamation(admin_headers):
     # Register Patient A and acquire initial hold
     r_a = client.post("/api/v1/auth/register", json={
         "email": f"patient_a_{rand_suffix}@example.com",
-        "password": "Password123!",
+        "password": TEST_DYNAMIC_PASS,
         "full_name": "Patient A",
         "accepted_insurance": ["Aetna"]
     })
@@ -371,7 +374,7 @@ def test_expired_slot_hold_reclamation(admin_headers):
     # Register Patient B
     r_b = client.post("/api/v1/auth/register", json={
         "email": f"patient_b_{rand_suffix}@example.com",
-        "password": "Password123!",
+        "password": TEST_DYNAMIC_PASS,
         "full_name": "Patient B",
         "accepted_insurance": ["Aetna"]
     })
@@ -395,7 +398,7 @@ def test_admin_patient_management(admin_headers):
     p_email = f"patient_mgmt_{rand_suffix}@example.com"
     r = client.post("/api/v1/auth/register", json={
         "email": p_email,
-        "password": "Password123!",
+        "password": TEST_DYNAMIC_PASS,
         "full_name": "Patient Management Test",
         "accepted_insurance": ["Cigna"]
     })

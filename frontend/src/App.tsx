@@ -1056,8 +1056,8 @@ export default function App() {
                         selectedPortalRole === "PATIENT"
                           ? "patient@example.com"
                           : selectedPortalRole === "DOCTOR"
-                          ? "dr.cuddy@unthinkable.ai"
-                          : "admin@myhospital.com"
+                          ? "doctor@clinica.health"
+                          : "admin@clinica.health"
                       }
                       className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                     />
@@ -2923,7 +2923,7 @@ export default function App() {
                     required
                     value={adminNewDocEmail}
                     onChange={(e) => setAdminNewDocEmail(e.target.value)}
-                    placeholder="dr.house@unthinkable.ai"
+                    placeholder="doctor@clinica.health"
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>

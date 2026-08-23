@@ -68,18 +68,20 @@ def cleanup_phase2b_test_data():
 
 @pytest.fixture(scope="module")
 def p2b_env():
+    import secrets
+    test_password = f"TestPass_{secrets.token_hex(8)}!"
     db = TestingSessionLocal()
     suffix = str(uuid.uuid4())[:8]
 
     admin = User(
         email=f"admin_{suffix}@test.com",
-        password_hash=get_password_hash("AdminPass123!"),
+        password_hash=get_password_hash(test_password),
         full_name="Admin P2B",
         role=UserRole.ADMIN,
     )
     doc_user = User(
         email=f"dr_{suffix}@test.com",
-        password_hash=get_password_hash("DocPass123!"),
+        password_hash=get_password_hash(test_password),
         full_name="Dr. Gregory",
         role=UserRole.DOCTOR,
     )
@@ -93,13 +95,13 @@ def p2b_env():
     )
     patient = User(
         email=f"pat_{suffix}@test.com",
-        password_hash=get_password_hash("PatientPass123!"),
+        password_hash=get_password_hash(test_password),
         full_name="Patient Bob",
         role=UserRole.PATIENT,
     )
     patient2 = User(
         email=f"pat2_{suffix}@test.com",
-        password_hash=get_password_hash("PatientPass123!"),
+        password_hash=get_password_hash(test_password),
         full_name="Patient Alice",
         role=UserRole.PATIENT,
     )
@@ -118,10 +120,10 @@ def p2b_env():
     db.commit()
 
     # Login tokens
-    a_tok = client.post("/api/v1/auth/login", json={"email": admin.email, "password": "AdminPass123!"}).json()["access_token"]
-    d_tok = client.post("/api/v1/auth/login", json={"email": doc_user.email, "password": "DocPass123!"}).json()["access_token"]
-    p_tok = client.post("/api/v1/auth/login", json={"email": patient.email, "password": "PatientPass123!"}).json()["access_token"]
-    p2_tok = client.post("/api/v1/auth/login", json={"email": patient2.email, "password": "PatientPass123!"}).json()["access_token"]
+    a_tok = client.post("/api/v1/auth/login", json={"email": admin.email, "password": test_password}).json()["access_token"]
+    d_tok = client.post("/api/v1/auth/login", json={"email": doc_user.email, "password": test_password}).json()["access_token"]
+    p_tok = client.post("/api/v1/auth/login", json={"email": patient.email, "password": test_password}).json()["access_token"]
+    p2_tok = client.post("/api/v1/auth/login", json={"email": patient2.email, "password": test_password}).json()["access_token"]
 
     db_data = {
         "admin_tok": a_tok,
@@ -261,7 +263,17 @@ def test_doctor_leave_application_approval_and_rejection(p2b_env):
 def test_appointment_cancellation_and_rescheduling(p2b_env):
     """Test cancellation with slot release and concurrency-safe rescheduling."""
     tok = p2b_env["pat_tok"]
-    s2, s3 = p2b_env["slot2_id"], p2b_env["slot3_id"]
+    doc_id = p2b_env["doc_id"]
+
+    db = TestingSessionLocal()
+    t_a = datetime.utcnow() + timedelta(days=25, hours=10)
+    t_b = datetime.utcnow() + timedelta(days=26, hours=10)
+    sa = Slot(doctor_id=doc_id, start_time=t_a, end_time=t_a + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
+    sb = Slot(doctor_id=doc_id, start_time=t_b, end_time=t_b + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
+    db.add_all([sa, sb])
+    db.commit()
+    s2, s3 = sa.id, sb.id
+    db.close()
 
     # Book slot 2
     client.post(f"/api/v1/appointments/slots/{s2}/hold", headers={"Authorization": f"Bearer {tok}"})
@@ -301,7 +313,17 @@ def test_reschedule_conflict_handling(p2b_env):
     """Patient 2 cannot reschedule to a slot already held/booked by Patient 1."""
     p1_tok = p2b_env["pat_tok"]
     p2_tok = p2b_env["pat2_tok"]
-    s2, s3 = p2b_env["slot2_id"], p2b_env["slot3_id"]
+    doc_id = p2b_env["doc_id"]
+
+    db = TestingSessionLocal()
+    t_c = datetime.utcnow() + timedelta(days=28, hours=10)
+    t_d = datetime.utcnow() + timedelta(days=29, hours=10)
+    sc = Slot(doctor_id=doc_id, start_time=t_c, end_time=t_c + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
+    sd = Slot(doctor_id=doc_id, start_time=t_d, end_time=t_d + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
+    db.add_all([sc, sd])
+    db.commit()
+    s2, s3 = sc.id, sd.id
+    db.close()
 
     # Patient 1 books s2, Patient 2 books s3
     client.post(f"/api/v1/appointments/slots/{s2}/hold", headers={"Authorization": f"Bearer {p1_tok}"})
@@ -324,10 +346,19 @@ def test_medication_reminders_and_job_reliability(p2b_env):
     """Prescription generates scheduled medication reminders; background jobs retry on failure."""
     p_tok = p2b_env["pat_tok"]
     d_tok = p2b_env["doc_tok"]
-    s1 = p2b_env["slot1_id"]
+    doc_id = p2b_env["doc_id"]
 
-    client.post(f"/api/v1/appointments/slots/{s1}/hold", headers={"Authorization": f"Bearer {p_tok}"})
-    appt = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p_tok}"}, json={"slot_id": s1, "symptoms": "Hypertension"}).json()
+    # Create fresh slot for consultation
+    db = TestingSessionLocal()
+    t_med = datetime.utcnow() + timedelta(days=20, hours=10)
+    slot_med = Slot(doctor_id=doc_id, start_time=t_med, end_time=t_med + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
+    db.add(slot_med)
+    db.commit()
+    s_id = slot_med.id
+    db.close()
+
+    client.post(f"/api/v1/appointments/slots/{s_id}/hold", headers={"Authorization": f"Bearer {p_tok}"})
+    appt = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p_tok}"}, json={"slot_id": s_id, "symptoms": "Hypertension"}).json()
 
     # Complete consultation with medication
     cons = client.post(f"/api/v1/consultations/{appt['id']}/start", headers={"Authorization": f"Bearer {d_tok}"}).json()
@@ -384,10 +415,19 @@ def test_notification_delivery_and_read_state(p2b_env):
 def test_email_failure_does_not_affect_appointment_state(p2b_env):
     """External notification failure must NOT alter appointment CONFIRMED state."""
     p_tok = p2b_env["pat_tok"]
-    s2 = p2b_env["slot2_id"]
+    doc_id = p2b_env["doc_id"]
 
-    client.post(f"/api/v1/appointments/slots/{s2}/hold", headers={"Authorization": f"Bearer {p_tok}"})
-    appt = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p_tok}"}, json={"slot_id": s2, "symptoms": "Sore throat"}).json()
+    # Create fresh slot
+    db = TestingSessionLocal()
+    t_email = datetime.utcnow() + timedelta(days=22, hours=10)
+    slot_email = Slot(doctor_id=doc_id, start_time=t_email, end_time=t_email + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
+    db.add(slot_email)
+    db.commit()
+    s_email_id = slot_email.id
+    db.close()
+
+    client.post(f"/api/v1/appointments/slots/{s_email_id}/hold", headers={"Authorization": f"Bearer {p_tok}"})
+    appt = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p_tok}"}, json={"slot_id": s_email_id, "symptoms": "Sore throat"}).json()
 
     # Appointment must remain confirmed even if notification sender fails
     db = TestingSessionLocal()

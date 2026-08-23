@@ -65,6 +65,8 @@ def cleanup_phase2a_test_data():
 
 @pytest.fixture
 def setup_phase2a_environment():
+    import secrets
+    test_password = f"TestPass_{secrets.token_hex(8)}!"
     db = TestingSessionLocal()
     rand_suffix = str(uuid.uuid4())[:8]
 
@@ -72,7 +74,7 @@ def setup_phase2a_environment():
         # Create Admin
         admin = User(
             email=f"p2a_admin_{rand_suffix}@testdomain.com",
-            password_hash=get_password_hash("AdminPass123!"),
+            password_hash=get_password_hash(test_password),
             full_name="Phase2A Admin",
             role=UserRole.ADMIN,
         )
@@ -81,7 +83,7 @@ def setup_phase2a_environment():
         # Create Doctor A
         doc_user_a = User(
             email=f"dr.p2a_a_{rand_suffix}@testdomain.com",
-            password_hash=get_password_hash("DocPass123!"),
+            password_hash=get_password_hash(test_password),
             full_name="Dr. Sarah Connor",
             role=UserRole.DOCTOR,
             accepted_insurance=["Aetna", "BlueCross"],
@@ -101,7 +103,7 @@ def setup_phase2a_environment():
         # Create Doctor B
         doc_user_b = User(
             email=f"dr.p2a_b_{rand_suffix}@testdomain.com",
-            password_hash=get_password_hash("DocPass123!"),
+            password_hash=get_password_hash(test_password),
             full_name="Dr. Emmett Brown",
             role=UserRole.DOCTOR,
             accepted_insurance=["Aetna", "Cigna"],
@@ -121,7 +123,7 @@ def setup_phase2a_environment():
         # Create Patient A
         patient_user_a = User(
             email=f"patient_p2a_a_{rand_suffix}@testdomain.com",
-            password_hash=get_password_hash("PatientPass123!"),
+            password_hash=get_password_hash(test_password),
             full_name="John Connor",
             role=UserRole.PATIENT,
             accepted_insurance=["Aetna"],
@@ -131,7 +133,7 @@ def setup_phase2a_environment():
         # Create Patient B
         patient_user_b = User(
             email=f"patient_p2a_b_{rand_suffix}@testdomain.com",
-            password_hash=get_password_hash("PatientPass123!"),
+            password_hash=get_password_hash(test_password),
             full_name="Marty McFly",
             role=UserRole.PATIENT,
             accepted_insurance=["Cigna"],
@@ -152,19 +154,19 @@ def setup_phase2a_environment():
         db.commit()
 
         # Login tokens
-        res_admin_login = client.post("/api/v1/auth/login", json={"email": admin.email, "password": "AdminPass123!"})
+        res_admin_login = client.post("/api/v1/auth/login", json={"email": admin.email, "password": test_password})
         admin_token = res_admin_login.json()["access_token"]
 
-        res_doc_a_login = client.post("/api/v1/auth/login", json={"email": doc_user_a.email, "password": "DocPass123!"})
+        res_doc_a_login = client.post("/api/v1/auth/login", json={"email": doc_user_a.email, "password": test_password})
         doc_a_token = res_doc_a_login.json()["access_token"]
 
-        res_doc_b_login = client.post("/api/v1/auth/login", json={"email": doc_user_b.email, "password": "DocPass123!"})
+        res_doc_b_login = client.post("/api/v1/auth/login", json={"email": doc_user_b.email, "password": test_password})
         doc_b_token = res_doc_b_login.json()["access_token"]
 
-        res_pat_a_login = client.post("/api/v1/auth/login", json={"email": patient_user_a.email, "password": "PatientPass123!"})
+        res_pat_a_login = client.post("/api/v1/auth/login", json={"email": patient_user_a.email, "password": test_password})
         patient_a_token = res_pat_a_login.json()["access_token"]
 
-        res_pat_b_login = client.post("/api/v1/auth/login", json={"email": patient_user_b.email, "password": "PatientPass123!"})
+        res_pat_b_login = client.post("/api/v1/auth/login", json={"email": patient_user_b.email, "password": test_password})
         patient_b_token = res_pat_b_login.json()["access_token"]
 
         return {
