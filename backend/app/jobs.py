@@ -64,6 +64,8 @@ class JobManager:
                 JobManager._handle_notification_job(db, job)
             elif job.job_type == JobType.MEDICATION_REMINDER:
                 JobManager._handle_medication_reminder(db, job)
+            elif job.job_type == JobType.GOOGLE_CALENDAR_SYNC:
+                JobManager._handle_google_calendar_sync(db, job)
 
             job.status = JobStatus.COMPLETED
             job.error_message = None
@@ -210,6 +212,15 @@ class JobManager:
         NotificationService.execute_medication_reminder_job(db, reminder_id, to_email, subject, body)
         job.result = {"delivered": True}
         db.commit()
+
+    @staticmethod
+    def _handle_google_calendar_sync(db: Session, job: BackgroundJob):
+        """
+        Execute Google Calendar synchronization job.
+        Failure here is retried via exponential backoff — appointment state is NEVER modified.
+        """
+        from app.google_calendar_service import GoogleCalendarService
+        GoogleCalendarService.process_calendar_sync_job(db, job)
 
     @staticmethod
     def process_pending_jobs(db: Session, limit: int = 10) -> int:

@@ -81,6 +81,62 @@ class AuthService:
         log_event("USER_LOGIN", {"user_id": user.id, "email": user.email, "role": user.role.value})
         return user
 
+    @staticmethod
+    def authenticate_or_register_google_user(
+        db: Session,
+        code: str,
+        role: UserRole = UserRole.PATIENT,
+        redirect_uri: Optional[str] = None,
+        current_user: Optional[User] = None,
+    ) -> Tuple[User, Dict[str, Any]]:
+        from app.google_calendar_service import GoogleCalendarService
+        import secrets
+
+        token_data = GoogleCalendarService.exchange_code_for_tokens(code, redirect_uri)
+        user_info = token_data.get("user_info", {})
+        google_email = (user_info.get("email") or "").strip().lower()
+        google_name = (user_info.get("name") or "Google User").strip()
+
+        if not google_email:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google account email not accessible")
+
+        if current_user:
+            user = current_user
+        else:
+            user = db.query(User).filter(User.email == google_email).first()
+            if not user:
+                # Create user with a secure random hash
+                random_pw = secrets.token_urlsafe(32)
+                user = User(
+                    email=google_email,
+                    password_hash=get_password_hash(random_pw),
+                    full_name=google_name,
+                    role=role if role in (UserRole.PATIENT, UserRole.DOCTOR) else UserRole.PATIENT,
+                    accepted_insurance=[],
+                )
+                db.add(user)
+                db.flush()
+
+                # If registering as doctor, create DoctorProfile
+                if user.role == UserRole.DOCTOR:
+                    profile = DoctorProfile(
+                        user_id=user.id,
+                        specialization="General Medicine",
+                        bio="",
+                        slot_duration_minutes=settings.DEFAULT_SLOT_DURATION_MINUTES,
+                        is_active=True,
+                    )
+                    db.add(profile)
+                    db.flush()
+                db.commit()
+                db.refresh(user)
+                log_event("USER_REGISTERED_GOOGLE", {"user_id": user.id, "email": user.email, "role": user.role.value})
+
+        # Save Google Account tokens
+        GoogleCalendarService.save_user_google_account(db, user.id, token_data)
+        log_event("USER_GOOGLE_AUTH_SUCCESS", {"user_id": user.id, "email": user.email})
+        return user, token_data
+
 class DoctorService:
     @staticmethod
     def create_doctor(db: Session, data: DoctorCreate) -> DoctorProfile:
@@ -498,6 +554,17 @@ class AppointmentService:
             except Exception as e:
                 log_event("AI_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
 
+            # Enqueue Google Calendar Sync Background Job (failure-tolerant)
+            try:
+                cal_job = JobManager.enqueue_job(
+                    db,
+                    JobType.GOOGLE_CALENDAR_SYNC,
+                    {"appointment_id": appointment.id, "action": "CREATE"},
+                )
+                appointment._calendar_job_id = cal_job.id
+            except Exception as e:
+                log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
+
             return appointment
 
         except HTTPException:
@@ -549,6 +616,21 @@ class AppointmentService:
             NotificationService.notify_appointment_cancellation(db, appointment, reason, cancelled_by_leave)
         except Exception as exc:
             log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
+
+        # Enqueue Google Calendar deletion job (failure-tolerant)
+        try:
+            cal_job = JobManager.enqueue_job(
+                db,
+                JobType.GOOGLE_CALENDAR_SYNC,
+                {
+                    "appointment_id": appointment.id,
+                    "action": "DELETE",
+                    "google_event_id": appointment.google_event_id,
+                },
+            )
+            appointment._calendar_job_id = cal_job.id
+        except Exception as exc:
+            log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
         return appointment
 
@@ -641,6 +723,17 @@ class AppointmentService:
         except Exception as exc:
             log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
+        # 6. Enqueue Google Calendar update job (failure-tolerant)
+        try:
+            cal_job = JobManager.enqueue_job(
+                db,
+                JobType.GOOGLE_CALENDAR_SYNC,
+                {"appointment_id": appointment.id, "action": "UPDATE"},
+            )
+            appointment._calendar_job_id = cal_job.id
+        except Exception as exc:
+            log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
+
         return appointment
 
     @staticmethod
@@ -661,6 +754,7 @@ class AppointmentService:
             "patient_email": a.patient.email if a.patient else "",
             "start_time": a.slot.start_time if a.slot else None,
             "end_time": a.slot.end_time if a.slot else None,
+            "google_event_id": a.google_event_id,
         }
 
     @staticmethod
@@ -922,6 +1016,18 @@ class DoctorLeaveService:
                 NotificationService.notify_doctor_leave_to_patient(db, appointment, leave)
             except Exception as exc:
                 log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
+            try:
+                JobManager.enqueue_job(
+                    db,
+                    JobType.GOOGLE_CALENDAR_SYNC,
+                    {
+                        "appointment_id": appointment.id,
+                        "action": "DELETE",
+                        "google_event_id": appointment.google_event_id,
+                    },
+                )
+            except Exception as exc:
+                log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
         # Notify the Doctor that leave was approved
         try:
@@ -1043,6 +1149,18 @@ class DoctorLeaveService:
                 NotificationService.notify_doctor_leave_to_patient(db, appointment, leave)
             except Exception as exc:
                 log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
+            try:
+                JobManager.enqueue_job(
+                    db,
+                    JobType.GOOGLE_CALENDAR_SYNC,
+                    {
+                        "appointment_id": appointment.id,
+                        "action": "DELETE",
+                        "google_event_id": appointment.google_event_id,
+                    },
+                )
+            except Exception as exc:
+                log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
         try:
             db.commit()

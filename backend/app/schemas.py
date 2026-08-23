@@ -152,6 +152,7 @@ class AppointmentOut(BaseModel):
     # Phase 2B additions
     cancellation_reason: Optional[str] = None
     rescheduled_from_slot_id: Optional[str] = None
+    google_event_id: Optional[str] = None
 
 class SystemStats(BaseModel):
     total_patients: int
@@ -351,3 +352,22 @@ class BackgroundJobOut(BaseModel):
     scheduled_at: datetime
     created_at: datetime
     updated_at: datetime
+
+
+# ── Google OAuth & Calendar Schemas ──────────────────────────────────────────
+
+class GoogleAuthUrlOut(BaseModel):
+    auth_url: str
+
+
+class GoogleCallbackRequest(BaseModel):
+    code: str
+    state: Optional[str] = None
+    role: Optional[UserRole] = UserRole.PATIENT
+
+
+class GoogleCalendarStatusOut(BaseModel):
+    connected: bool
+    email: Optional[str] = None
+    scopes: Optional[str] = None
+    connected_at: Optional[datetime] = None

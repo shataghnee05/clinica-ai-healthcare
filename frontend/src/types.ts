@@ -65,6 +65,7 @@ export interface Appointment {
   end_time?: string;
   cancellation_reason?: string | null;
   rescheduled_from_slot_id?: string | null;
+  google_event_id?: string | null;
 }
 
 export interface SystemStats {
@@ -229,4 +230,11 @@ export interface MedicationReminder {
   sent_at?: string | null;
   error_message?: string | null;
   created_at: string;
+}
+
+export interface GoogleCalendarStatus {
+  connected: boolean;
+  email?: string | null;
+  scopes?: string | null;
+  connected_at?: string | null;
 }

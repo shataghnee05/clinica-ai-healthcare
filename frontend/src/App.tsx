@@ -13,6 +13,7 @@ import type {
   LeavePreview,
   Notification,
   MedicationReminder,
+  GoogleCalendarStatus,
 } from "./types";
 import { api, setToken, clearToken, getStoredUser, setStoredUser, getToken } from "./api";
 import {
@@ -73,6 +74,10 @@ export default function App() {
   const [patientTab, setPatientTab] = useState<"find-doctors" | "my-appointments" | "medications">("find-doctors");
   const [doctorTab, setDoctorTab] = useState<"doctor-agenda" | "doctor-leaves">("doctor-agenda");
   const [adminTab, setAdminTab] = useState<"admin-stats" | "admin-doctors" | "admin-leaves" | "admin-patients" | "admin-jobs">("admin-stats");
+
+  // Google Calendar Integration State
+  const [googleCalendarStatus, setGoogleCalendarStatus] = useState<GoogleCalendarStatus | null>(null);
+  const [googleConnecting, setGoogleConnecting] = useState(false);
 
   // Patient Booking States
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -255,14 +260,43 @@ export default function App() {
     }
   }, [currentUser, patientTab, doctorTab, adminTab, adminLeaveDoctorId, adminLeaveStatusFilter]);
 
-  // Notifications poll
+  // Notifications poll & Google Calendar status
   useEffect(() => {
     if (currentUser) {
       loadNotifications();
+      loadGoogleCalendarStatus();
       const interval = setInterval(loadNotifications, 15000);
       return () => clearInterval(interval);
     }
   }, [currentUser]);
+
+  // Handle Google OAuth callback on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+    const state = urlParams.get("state");
+    if (code) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setAuthLoading(true);
+      api.auth
+        .googleCallback(code, state || "login", selectedPortalRole)
+        .then((res) => {
+          setToken(res.access_token);
+          setCurrentUser(res.user);
+          setStoredUser(res.user);
+          if (res.user.role === "PATIENT") setPatientTab("find-doctors");
+          if (res.user.role === "DOCTOR") setDoctorTab("doctor-agenda");
+          if (res.user.role === "ADMIN") setAdminTab("admin-stats");
+          api.auth.getGoogleCalendarStatus().then(setGoogleCalendarStatus).catch(() => {});
+        })
+        .catch((err: any) => {
+          setAuthError(err.message || "Google authentication failed");
+        })
+        .finally(() => {
+          setAuthLoading(false);
+        });
+    }
+  }, []);
 
   // 5-minute atomic slot hold countdown timer
   useEffect(() => {
@@ -444,6 +478,38 @@ export default function App() {
       setErrorMessage(err.message);
     } finally {
       setRemindersLoading(false);
+    }
+  };
+
+  const loadGoogleCalendarStatus = async () => {
+    if (!getToken()) return;
+    try {
+      const s = await api.auth.getGoogleCalendarStatus();
+      setGoogleCalendarStatus(s);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleGoogleAuth = async (flowState: string = "login") => {
+    try {
+      setGoogleConnecting(true);
+      setAuthError("");
+      const res = await api.auth.getGoogleAuthUrl(flowState);
+      window.location.href = res.auth_url;
+    } catch (err: any) {
+      setAuthError(err.message || "Failed to initiate Google OAuth");
+      setErrorMessage(err.message || "Failed to initiate Google OAuth");
+      setGoogleConnecting(false);
+    }
+  };
+
+  const handleDisconnectGoogleCalendar = async () => {
+    try {
+      await api.auth.disconnectGoogleCalendar();
+      setGoogleCalendarStatus({ connected: false });
+    } catch (err: any) {
+      setErrorMessage(err.message || "Failed to disconnect Google Calendar");
     }
   };
 
@@ -1095,6 +1161,47 @@ export default function App() {
                     </>
                   )}
                 </button>
+
+                {/* Google OAuth Button */}
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white dark:bg-slate-900 px-3 text-slate-400 font-medium">Or continue with</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleGoogleAuth("login")}
+                  disabled={authLoading || googleConnecting}
+                  className="w-full py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/70 text-slate-700 dark:text-slate-200 font-semibold text-sm shadow-sm transition duration-150 flex items-center justify-center space-x-3 disabled:opacity-50"
+                >
+                  {googleConnecting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-teal-600" />
+                  ) : (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                      />
+                    </svg>
+                  )}
+                  <span>Sign in with Google</span>
+                </button>
               </form>
 
               {/* Patient Toggle: Sign in vs Register */}
@@ -1307,6 +1414,32 @@ export default function App() {
             </button>
 
             {/* Theme Toggle */}
+            {/* Google Calendar Connect / Status Badge */}
+            {currentUser && currentUser.role !== "ADMIN" && (
+              googleCalendarStatus?.connected ? (
+                <div className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300">
+                  <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span className="hidden md:inline font-medium">Calendar Connected</span>
+                  <button
+                    onClick={handleDisconnectGoogleCalendar}
+                    className="text-[10px] text-emerald-700 dark:text-emerald-400 underline hover:text-rose-600 transition ml-1"
+                    title="Disconnect Google Calendar"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleGoogleAuth("connect_calendar")}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition"
+                  title="Connect your Google Calendar to sync confirmed appointments automatically"
+                >
+                  <Calendar className="w-4 h-4 text-teal-600" />
+                  <span className="hidden sm:inline">Connect Google Calendar</span>
+                </button>
+              )
+            )}
+
             <button
               onClick={toggleTheme}
               className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition"
@@ -1690,6 +1823,12 @@ export default function App() {
                               <span className="italic">"{appt.symptoms}"</span>
                             </div>
                           )}
+                          {appt.google_event_id && (
+                            <div className="flex items-center space-x-1.5 pt-1 text-teal-600 dark:text-teal-400 font-medium text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Synced to Google Calendar</span>
+                            </div>
+                          )}
                           {appt.cancellation_reason && (
                             <div className="flex items-start space-x-2 pt-1 text-rose-600 dark:text-rose-400">
                               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -1846,6 +1985,12 @@ export default function App() {
                             <div className="flex items-start space-x-2 pt-1">
                               <FileText className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
                               <span className="italic">Reported Symptoms: "{appt.symptoms}"</span>
+                            </div>
+                          )}
+                          {appt.google_event_id && (
+                            <div className="flex items-center space-x-1.5 pt-1 text-teal-600 dark:text-teal-400 font-medium text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Synced to Google Calendar</span>
                             </div>
                           )}
                         </div>

@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     NOTIFICATION_FROM_EMAIL: str = "noreply@clinica.local"
     NOTIFICATION_ENABLED: bool = False
 
+    # Google OAuth 2.0 & Google Calendar settings
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:5173/auth/google/callback"
+    GOOGLE_OAUTH_SCOPES: str = "openid email profile https://www.googleapis.com/auth/calendar.events"
+
     @field_validator("SECRET_KEY", mode="before")
     @classmethod
     def validate_secret_key(cls, v: Optional[str]) -> str:

@@ -51,6 +51,7 @@ class User(Base):
     doctor_profile = relationship("DoctorProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     appointments = relationship("Appointment", back_populates="patient", foreign_keys="Appointment.patient_id")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+    google_account = relationship("UserGoogleAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 class DoctorProfile(Base):
     __tablename__ = "doctor_profiles"
@@ -117,6 +118,7 @@ class Appointment(Base):
     # Phase 2B additions
     cancellation_reason = Column(Text, nullable=True)
     rescheduled_from_slot_id = Column(String(36), ForeignKey("slots.id", ondelete="SET NULL"), nullable=True)
+    google_event_id = Column(String(255), nullable=True)
 
     slot = relationship("Slot", back_populates="appointment", foreign_keys=[slot_id])
     rescheduled_from_slot = relationship("Slot", foreign_keys=[rescheduled_from_slot_id])
@@ -135,6 +137,7 @@ class JobType(str, enum.Enum):
     NOTIFY_APPOINTMENT_REMINDER = "NOTIFY_APPOINTMENT_REMINDER"
     NOTIFY_DOCTOR_LEAVE = "NOTIFY_DOCTOR_LEAVE"
     MEDICATION_REMINDER = "MEDICATION_REMINDER"
+    GOOGLE_CALENDAR_SYNC = "GOOGLE_CALENDAR_SYNC"
 
 
 class JobStatus(str, enum.Enum):
@@ -343,6 +346,25 @@ class MedicationReminder(Base):
     patient = relationship("User")
 
 
+class UserGoogleAccount(Base):
+    """Google OAuth and Google Calendar connection for a user."""
+    __tablename__ = "user_google_accounts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    google_user_id = Column(String(255), nullable=True, index=True)
+    email = Column(String(255), nullable=False)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=True)
+    token_expiry = Column(DateTime, nullable=True)
+    scopes = Column(Text, nullable=True)
+    is_calendar_connected = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="google_account")
+
+
 from sqlalchemy.pool import NullPool
 
 connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
@@ -368,7 +390,8 @@ def run_schema_migrations():
     try:
         conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
         insp = inspect(conn)
-        if "doctor_leaves" in insp.get_table_names():
+        tables = insp.get_table_names()
+        if "doctor_leaves" in tables:
             existing_cols = {col["name"] for col in insp.get_columns("doctor_leaves")}
             if "status" not in existing_cols:
                 try: conn.execute(text("ALTER TABLE doctor_leaves ADD COLUMN status VARCHAR(20) DEFAULT 'APPROVED' NOT NULL"))
@@ -386,6 +409,12 @@ def run_schema_migrations():
                 try: conn.execute(text("ALTER TABLE doctor_leaves ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
                 except Exception: pass
 
+        if "appointments" in tables:
+            existing_appt_cols = {col["name"] for col in insp.get_columns("appointments")}
+            if "google_event_id" not in existing_appt_cols:
+                try: conn.execute(text("ALTER TABLE appointments ADD COLUMN google_event_id VARCHAR(255)"))
+                except Exception: pass
+
         # PostgreSQL Enum additions & constraint relaxes
         if engine.dialect.name == "postgresql":
             try: conn.execute(text("ALTER TABLE doctor_leaves ALTER COLUMN confirmed_at DROP NOT NULL"))
@@ -400,8 +429,16 @@ def run_schema_migrations():
             except Exception: pass
             try: conn.execute(text("ALTER TYPE leavestatus ADD VALUE IF NOT EXISTS 'REJECTED'"))
             except Exception: pass
+            try: conn.execute(text("ALTER TYPE jobtype ADD VALUE IF NOT EXISTS 'GOOGLE_CALENDAR_SYNC'"))
+            except Exception: pass
         conn.close()
     except Exception as e:
+        pass
+
+    # Ensure tables exist
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception:
         pass
 
 

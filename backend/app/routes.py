@@ -28,14 +28,19 @@ from app.schemas import (
     ConsultationOut,
     PostVisitSummaryOut,
     CancelRequest,
+    GoogleAuthUrlOut,
+    GoogleCallbackRequest,
+    GoogleCalendarStatusOut,
 )
 from app.security import (
     create_access_token,
     get_current_user,
+    get_optional_current_user,
     require_patient,
     require_doctor,
     require_admin,
 )
+from app.google_calendar_service import GoogleCalendarService
 from app.services import (
     AuthService,
     DoctorService,
@@ -73,6 +78,48 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
         "token_type": "bearer",
         "user": user,
     }
+
+@api_router.get("/auth/google/url", response_model=GoogleAuthUrlOut)
+def get_google_auth_url(
+    state: str = Query("login"),
+    redirect_uri: Optional[str] = Query(None),
+):
+    url = GoogleCalendarService.get_authorization_url(state=state, redirect_uri=redirect_uri)
+    return {"auth_url": url}
+
+@api_router.post("/auth/google/callback", response_model=Token)
+def google_auth_callback(
+    data: GoogleCallbackRequest,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+    db: Session = Depends(get_db),
+):
+    user, _ = AuthService.authenticate_or_register_google_user(
+        db=db,
+        code=data.code,
+        role=data.role,
+        current_user=current_user,
+    )
+    token = create_access_token(subject=user.id, role=user.role.value)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user,
+    }
+
+@api_router.get("/auth/google/status", response_model=GoogleCalendarStatusOut)
+def get_google_calendar_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return GoogleCalendarService.get_user_calendar_status(db, current_user.id)
+
+@api_router.post("/auth/google/disconnect")
+def disconnect_google_calendar(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    success = GoogleCalendarService.disconnect_google_account(db, current_user.id)
+    return {"status": "OK", "message": "Google Calendar disconnected", "disconnected": success}
 
 @api_router.get("/auth/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
@@ -136,6 +183,8 @@ def confirm_appointment(
     appointment = AppointmentService.confirm_appointment(db, data, current_user.id)
     if hasattr(appointment, "_enqueued_job_id") and appointment._enqueued_job_id:
         background_tasks.add_task(run_job_in_background, appointment._enqueued_job_id)
+    if hasattr(appointment, "_calendar_job_id") and appointment._calendar_job_id:
+        background_tasks.add_task(run_job_in_background, appointment._calendar_job_id)
 
     return {
         "id": appointment.id,
@@ -151,6 +200,7 @@ def confirm_appointment(
         "patient_email": current_user.email,
         "start_time": appointment.slot.start_time if appointment.slot else None,
         "end_time": appointment.slot.end_time if appointment.slot else None,
+        "google_event_id": appointment.google_event_id,
     }
 
 @api_router.get("/appointments/patient/my-appointments", response_model=List[AppointmentOut])
@@ -170,12 +220,15 @@ def get_doctor_agenda(
 @api_router.patch("/appointments/{appointment_id}/cancel")
 def cancel_appointment(
     appointment_id: str,
+    background_tasks: BackgroundTasks,
     data: Optional[CancelRequest] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     reason = data.reason if data else None
-    AppointmentService.cancel_appointment(db, appointment_id, current_user, reason=reason)
+    appointment = AppointmentService.cancel_appointment(db, appointment_id, current_user, reason=reason)
+    if hasattr(appointment, "_calendar_job_id") and appointment._calendar_job_id:
+        background_tasks.add_task(run_job_in_background, appointment._calendar_job_id)
     return {"status": "OK", "message": "Appointment cancelled successfully"}
 
 @api_router.get("/admin/doctors", response_model=List[DoctorOut])

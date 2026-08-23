@@ -10,6 +10,7 @@ import type {
   LeavePreview,
   Notification,
   MedicationReminder,
+  GoogleCalendarStatus,
 } from "./types";
 
 const envBase = import.meta.env.VITE_API_BASE_URL;
@@ -86,6 +87,25 @@ export const api = {
       }),
 
     getMe: () => request<User>("/auth/me"),
+
+    getGoogleAuthUrl: (state: string = "login", redirectUri?: string) => {
+      const query = new URLSearchParams({ state });
+      if (redirectUri) query.set("redirect_uri", redirectUri);
+      return request<{ auth_url: string }>(`/auth/google/url?${query.toString()}`);
+    },
+
+    googleCallback: (code: string, state?: string, role: string = "PATIENT") =>
+      request<AuthResponse>("/auth/google/callback", {
+        method: "POST",
+        body: JSON.stringify({ code, state, role }),
+      }),
+
+    getGoogleCalendarStatus: () => request<GoogleCalendarStatus>("/auth/google/status"),
+
+    disconnectGoogleCalendar: () =>
+      request<{ status: string; message: string; disconnected: boolean }>("/auth/google/disconnect", {
+        method: "POST",
+      }),
   },
 
   doctors: {
