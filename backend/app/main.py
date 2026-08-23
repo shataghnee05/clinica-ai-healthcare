@@ -1,16 +1,17 @@
 import os
+from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import settings
 from app.logger import log_event
 from app.routes import api_router
 from app.routes_phase2b import phase2b_router
-
 from app.models import engine, Base, run_schema_migrations
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,15 +43,42 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(phase2b_router, prefix=settings.API_V1_STR)
 
-static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# Determine static directories
+backend_dir = Path(__file__).resolve().parent.parent
+static_dir = backend_dir / "static"
+assets_dir = static_dir / "assets"
+
+# 1. Mount /assets directory so Vite JS/CSS bundles are served with correct MIME types
+if assets_dir.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+# 2. Mount /static for any explicit static references
+if static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
 
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    if full_path.startswith("api") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
-        return None
-    index_file = os.path.join(static_dir, "index.html")
-    if os.path.exists(index_file):
-        return FileResponse(index_file)
-    return {"message": "Healthcare Appointment API is running."}
+    # Do not intercept API or documentation routes
+    if (
+        full_path.startswith("api")
+        or full_path.startswith("docs")
+        or full_path.startswith("openapi.json")
+        or full_path.startswith("redoc")
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+    # Serve physical file if it exists directly in static_dir (e.g. favicon.svg, icons.svg)
+    requested_file = static_dir / full_path
+    if requested_file.is_file():
+        return FileResponse(str(requested_file))
+
+    # SPA Fallback: serve index.html for all client-side navigation routes
+    index_file = static_dir / "index.html"
+    if index_file.is_file():
+        return FileResponse(str(index_file))
+
+    return JSONResponse(
+        content={"message": "Healthcare Appointment API is running."},
+        status_code=status.HTTP_200_OK,
+    )
