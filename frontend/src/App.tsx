@@ -1087,7 +1087,7 @@ export default function App() {
                         required
                         value={authFullName}
                         onChange={(e) => setAuthFullName(e.target.value)}
-                        placeholder="Jane Doe"
+                        placeholder="Aarav Sharma"
                         className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                       />
                     </div>
@@ -1100,7 +1100,7 @@ export default function App() {
                         type="text"
                         value={authInsurance}
                         onChange={(e) => setAuthInsurance(e.target.value)}
-                        placeholder="Aetna, BlueCross, Cigna"
+                        placeholder="Star Health, HDFC ERGO, Care Health, Max Bupa"
                         className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                       />
                     </div>
@@ -3038,7 +3038,7 @@ export default function App() {
                     required
                     value={adminNewDocName}
                     onChange={(e) => setAdminNewDocName(e.target.value)}
-                    placeholder="Dr. Gregory House"
+                    placeholder="Dr. Rajesh Sharma"
                     className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
