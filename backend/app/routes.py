@@ -9,6 +9,10 @@ from app.schemas import (
     Token,
     UserRegister,
     UserLogin,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    VerifyOtpRequest,
+    ResetPasswordRequest,
     UserOut,
     DoctorCreate,
     DoctorUpdate,
@@ -77,6 +81,28 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
         "access_token": token,
         "token_type": "bearer",
         "user": user,
+    }
+
+@api_router.post("/auth/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """Request a 6-digit OTP sent to user's registered email."""
+    result = AuthService.request_password_reset_otp(db, data.email)
+    return result
+
+@api_router.post("/auth/verify-otp")
+def verify_otp(data: VerifyOtpRequest, db: Session = Depends(get_db)):
+    """Verify that the 6-digit OTP is valid and not expired."""
+    AuthService.verify_password_reset_otp(db, data.email, data.otp)
+    return {"status": "success", "message": "Verification code is valid."}
+
+@api_router.post("/auth/reset-password")
+def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Reset user password using valid OTP."""
+    user = AuthService.reset_password_with_otp(db, data.email, data.otp, data.new_password)
+    return {
+        "status": "success",
+        "message": "Password has been successfully reset! You can now log in with your new password.",
+        "email": user.email,
     }
 
 @api_router.get("/auth/google/url", response_model=GoogleAuthUrlOut)

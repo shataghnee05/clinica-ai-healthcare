@@ -33,7 +33,11 @@ from app.models import (
     MedicationReminder,
     MedicationReminderStatus,
     NotificationType,
+    PasswordResetOTP,
 )
+import random
+from app.email_providers import get_email_provider
+from app.email_templates import template_password_reset_otp
 from app.schemas import (
     UserRegister,
     DoctorCreate,
@@ -136,6 +140,121 @@ class AuthService:
         GoogleCalendarService.save_user_google_account(db, user.id, token_data)
         log_event("USER_GOOGLE_AUTH_SUCCESS", {"user_id": user.id, "email": user.email})
         return user, token_data
+
+    @staticmethod
+    def request_password_reset_otp(db: Session, email: str) -> Dict[str, Any]:
+        clean_email = email.strip().lower()
+        user = db.query(User).filter(User.email == clean_email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No account found with this email address. Please verify your email or register."
+            )
+
+        # Generate a secure 6-digit numeric OTP
+        otp_code = f"{random.randint(100000, 999999)}"
+        expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+        # Invalidate any existing unused OTPs for this email
+        db.query(PasswordResetOTP).filter(
+            PasswordResetOTP.email == clean_email,
+            PasswordResetOTP.is_used == False
+        ).update({"is_used": True})
+
+        # Create new OTP record
+        otp_record = PasswordResetOTP(
+            email=clean_email,
+            otp_code=otp_code,
+            expires_at=expires_at,
+            is_used=False,
+        )
+        db.add(otp_record)
+        db.commit()
+
+        # Send email via Email Provider (Resend, SMTP, or Mock)
+        subject, plain_text, html_body = template_password_reset_otp(
+            user_name=user.full_name,
+            otp_code=otp_code,
+            expiry_minutes=10,
+        )
+        email_provider = get_email_provider()
+        success, err = email_provider.send_email(
+            to_email=clean_email,
+            subject=subject,
+            body=plain_text,
+            html_body=html_body,
+        )
+        log_event("PASSWORD_RESET_OTP_GENERATED", {
+            "email": clean_email,
+            "email_sent": success,
+            "error": err
+        })
+
+        return {
+            "status": "success",
+            "message": f"Verification code has been sent to {clean_email}.",
+            "email": clean_email,
+        }
+
+    @staticmethod
+    def verify_password_reset_otp(db: Session, email: str, otp: str) -> bool:
+        clean_email = email.strip().lower()
+        clean_otp = otp.strip()
+        record = db.query(PasswordResetOTP).filter(
+            PasswordResetOTP.email == clean_email,
+            PasswordResetOTP.otp_code == clean_otp,
+            PasswordResetOTP.is_used == False,
+            PasswordResetOTP.expires_at > datetime.utcnow(),
+        ).order_by(PasswordResetOTP.created_at.desc()).first()
+
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification code. Please request a new code.",
+            )
+        return True
+
+    @staticmethod
+    def reset_password_with_otp(db: Session, email: str, otp: str, new_password: str) -> User:
+        clean_email = email.strip().lower()
+        clean_otp = otp.strip()
+
+        user = db.query(User).filter(User.email == clean_email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found."
+            )
+
+        # Validate OTP
+        record = db.query(PasswordResetOTP).filter(
+            PasswordResetOTP.email == clean_email,
+            PasswordResetOTP.otp_code == clean_otp,
+            PasswordResetOTP.is_used == False,
+            PasswordResetOTP.expires_at > datetime.utcnow(),
+        ).order_by(PasswordResetOTP.created_at.desc()).first()
+
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification code. Please request a new code.",
+            )
+
+        if len(new_password) < 6:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password must be at least 6 characters long.",
+            )
+
+        # Mark OTP as used
+        record.is_used = True
+        user.password_hash = get_password_hash(new_password)
+        db.commit()
+        db.refresh(user)
+
+        log_event("PASSWORD_RESET_SUCCESS", {"user_id": user.id, "email": user.email})
+        return user
+
 
 class DoctorService:
     @staticmethod

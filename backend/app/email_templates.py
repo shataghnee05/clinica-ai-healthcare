@@ -351,3 +351,46 @@ def template_medication_reminder(
     """
     html = _base_html_layout(subject, f"Time to take your medication: {medication_name} ({dosage}).", content_html)
     return subject, plain_text, html
+
+
+def template_password_reset_otp(
+    user_name: str,
+    otp_code: str,
+    expiry_minutes: int = 10,
+) -> tuple[str, str, str]:
+    """
+    Template for sending Password Reset OTP verification code.
+    Returns: (subject, plain_text_body, html_body)
+    """
+    subject = f"Your Password Reset Code: {otp_code} - Clinica Healthcare"
+
+    plain_text = (
+        f"Hello {user_name},\n\n"
+        f"You recently requested to reset your password for your Clinica account.\n\n"
+        f"Your 6-Digit Verification Code (OTP) is: {otp_code}\n\n"
+        f"This code will expire in {expiry_minutes} minutes. "
+        f"If you did not request this password reset, please ignore this email or contact support.\n\n"
+        f"Clinica Healthcare Team"
+    )
+
+    content_html = f"""
+      <h2 style="margin-top:0;color:#0f172a;font-size:18px;">Password Reset Request</h2>
+      <p>Hello <strong>{user_name}</strong>,</p>
+      <p>We received a request to reset the password for your <strong>Clinica</strong> account. Use the one-time verification code below to proceed:</p>
+
+      <div style="background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%); border: 2px dashed #0d9488; border-radius: 16px; padding: 24px; text-align: center; margin: 24px 0;">
+        <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #0f766e; margin-bottom: 8px;">One-Time Verification Code</div>
+        <div style="font-size: 38px; font-weight: 800; letter-spacing: 8px; color: #0f766e; font-family: monospace;">{otp_code}</div>
+        <div style="font-size: 12px; color: #64748b; margin-top: 8px;">Expires in {expiry_minutes} minutes &bull; Never share this code with anyone</div>
+      </div>
+
+      <p style="font-size: 13px; color: #64748b;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+    """
+
+    html = _base_html_layout(
+        title="Reset Your Clinica Password",
+        preheader=f"Your verification code is {otp_code}. Valid for {expiry_minutes} minutes.",
+        content_html=content_html,
+    )
+    return subject, plain_text, html
+

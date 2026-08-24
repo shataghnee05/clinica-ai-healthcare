@@ -365,6 +365,18 @@ class UserGoogleAccount(Base):
     user = relationship("User", back_populates="google_account")
 
 
+class PasswordResetOTP(Base):
+    """Stores one-time passwords (OTP) for user password resets with expiration."""
+    __tablename__ = "password_reset_otps"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(255), index=True, nullable=False)
+    otp_code = Column(String(6), nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    is_used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 from sqlalchemy.pool import NullPool
 
 connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}

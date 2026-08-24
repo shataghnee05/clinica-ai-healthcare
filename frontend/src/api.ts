@@ -106,6 +106,24 @@ export const api = {
       request<{ status: string; message: string; disconnected: boolean }>("/auth/google/disconnect", {
         method: "POST",
       }),
+
+    forgotPassword: (email: string) =>
+      request<{ status: string; message: string; email: string }>("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
+
+    verifyOtp: (email: string, otp: string) =>
+      request<{ status: string; message: string }>("/auth/verify-otp", {
+        method: "POST",
+        body: JSON.stringify({ email, otp }),
+      }),
+
+    resetPassword: (email: string, otp: string, newPassword: string) =>
+      request<{ status: string; message: string; email?: string }>("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ email, otp, new_password: newPassword }),
+      }),
   },
 
   doctors: {
