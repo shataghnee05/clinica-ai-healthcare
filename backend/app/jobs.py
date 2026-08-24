@@ -10,6 +10,7 @@ from app.models import (
     JobType,
     JobStatus,
     Appointment,
+    AppointmentStatus,
     PreVisitSummary,
     Consultation,
     PostVisitSummary,
@@ -25,14 +26,19 @@ logger = logging.getLogger(__name__)
 
 class JobManager:
     @staticmethod
-    def enqueue_job(db: Session, job_type: JobType, payload: Dict[str, Any]) -> BackgroundJob:
+    def enqueue_job(
+        db: Session,
+        job_type: JobType,
+        payload: Dict[str, Any],
+        scheduled_at: Optional[datetime] = None,
+    ) -> BackgroundJob:
         job = BackgroundJob(
             job_type=job_type,
             status=JobStatus.PENDING,
             payload=payload,
             attempts=0,
             max_attempts=3,
-            scheduled_at=datetime.utcnow(),
+            scheduled_at=scheduled_at or datetime.utcnow(),
         )
         db.add(job)
         db.commit()
@@ -40,9 +46,13 @@ class JobManager:
         return job
 
     @staticmethod
-    def process_job(db: Session, job_id: str) -> bool:
+    def process_job(db: Session, job_id: str, force: bool = False) -> bool:
         job = db.query(BackgroundJob).filter(BackgroundJob.id == job_id).first()
         if not job or job.status in (JobStatus.COMPLETED, JobStatus.PROCESSING):
+            return False
+
+        # If job is scheduled in the future and not forced, keep PENDING and skip
+        if not force and job.scheduled_at and job.scheduled_at > datetime.utcnow():
             return False
 
         job.status = JobStatus.PROCESSING
@@ -193,6 +203,10 @@ class JobManager:
         Failure here is retried — but appointment state is NEVER modified.
         """
         from app.notification_service import NotificationService
+        if job.job_type == JobType.NOTIFY_APPOINTMENT_REMINDER:
+            NotificationService.execute_appointment_reminder_job(db, job)
+            return
+
         notification_id = job.payload.get("notification_id")
         to_email = job.payload.get("to_email", "")
         subject = job.payload.get("subject", "")
@@ -207,6 +221,35 @@ class JobManager:
         """Process a medication reminder job."""
         from app.notification_service import NotificationService
         reminder_id = job.payload.get("reminder_id")
+        reminder = db.query(MedicationReminder).filter(MedicationReminder.id == reminder_id).first()
+        if not reminder:
+            raise ValueError(f"Medication reminder record {reminder_id} not found")
+
+        # Respect cancelled appointments
+        if (
+            reminder.medication
+            and reminder.medication.prescription
+            and reminder.medication.prescription.consultation
+            and reminder.medication.prescription.consultation.appointment
+            and reminder.medication.prescription.consultation.appointment.status == AppointmentStatus.CANCELLED
+        ):
+            logger.info("Skipping medication reminder %s because appointment is cancelled", reminder_id)
+            reminder.status = MedicationReminderStatus.FAILED
+            reminder.error_message = "Appointment was cancelled"
+            job.result = {"delivered": False, "reason": "Appointment cancelled"}
+            db.commit()
+            return
+
+        # Respect medication end date
+        if reminder.medication and reminder.medication.end_date:
+            if reminder.scheduled_for.date() > reminder.medication.end_date:
+                logger.info("Skipping medication reminder %s past end date", reminder_id)
+                reminder.status = MedicationReminderStatus.FAILED
+                reminder.error_message = "Past medication end date"
+                job.result = {"delivered": False, "reason": "Past medication end date"}
+                db.commit()
+                return
+
         to_email = job.payload.get("to_email", "")
         subject = job.payload.get("subject", "")
         body = job.payload.get("body", "")

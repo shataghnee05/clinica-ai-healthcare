@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     NOTIFICATION_FROM_EMAIL: str = "onboarding@resend.dev"
     NOTIFICATION_ENABLED: bool = True
+    APPOINTMENT_REMINDER_HOURS_BEFORE: int = 24
 
     # Google OAuth 2.0 & Google Calendar settings
     GOOGLE_CLIENT_ID: str = ""

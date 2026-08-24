@@ -11,7 +11,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 
-from app.models import get_db, User, BackgroundJob, DoctorProfile
+from app.models import get_db, User, BackgroundJob, DoctorProfile, JobStatus
 from app.jobs import run_job_in_background
 from app.schemas import (
     DoctorLeaveCreate,
@@ -152,7 +152,8 @@ def admin_approve_leave(
     """
     leave = DoctorLeaveService.approve_leave(db, leave_id, current_user)
     pending_jobs = db.query(BackgroundJob).filter(
-        BackgroundJob.status == "PENDING"
+        BackgroundJob.status == JobStatus.PENDING,
+        BackgroundJob.scheduled_at <= datetime.utcnow(),
     ).order_by(BackgroundJob.created_at.desc()).limit(10).all()
     for job in pending_jobs:
         background_tasks.add_task(run_job_in_background, job.id)
@@ -214,7 +215,8 @@ def confirm_doctor_leave(
         db, doctor_id, data.start_date, data.end_date, data.reason or "", current_user
     )
     pending_jobs = db.query(BackgroundJob).filter(
-        BackgroundJob.status == "PENDING"
+        BackgroundJob.status == JobStatus.PENDING,
+        BackgroundJob.scheduled_at <= datetime.utcnow(),
     ).order_by(BackgroundJob.created_at.desc()).limit(10).all()
     for job in pending_jobs:
         background_tasks.add_task(run_job_in_background, job.id)
@@ -264,9 +266,10 @@ def reschedule_appointment(
     appointment = AppointmentService.reschedule_appointment(
         db, appointment_id, data.new_slot_id, current_user
     )
-    # Process pending notification jobs in background
+    # Process pending notification jobs in background (only due jobs)
     pending_jobs = db.query(BackgroundJob).filter(
-        BackgroundJob.status == "PENDING"
+        BackgroundJob.status == JobStatus.PENDING,
+        BackgroundJob.scheduled_at <= datetime.utcnow(),
     ).order_by(BackgroundJob.created_at.desc()).limit(5).all()
     for job in pending_jobs:
         background_tasks.add_task(run_job_in_background, job.id)

@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 
-from app.models import get_db, User
+from app.models import get_db, User, BackgroundJob, JobStatus
 from app.jobs import run_job_in_background
 from app.schemas import (
     Token,
@@ -207,9 +207,10 @@ def confirm_appointment(
     db: Session = Depends(get_db),
 ):
     appointment = AppointmentService.confirm_appointment(db, data, current_user.id)
-    # Non-blocking background job dispatch
+    # Non-blocking background job dispatch (only due jobs)
     pending_jobs = db.query(BackgroundJob).filter(
-        BackgroundJob.status == "PENDING"
+        BackgroundJob.status == JobStatus.PENDING,
+        BackgroundJob.scheduled_at <= datetime.utcnow(),
     ).order_by(BackgroundJob.created_at.desc()).limit(10).all()
     for job in pending_jobs:
         background_tasks.add_task(run_job_in_background, job.id)
@@ -255,9 +256,10 @@ def cancel_appointment(
 ):
     reason = data.reason if data else None
     appointment = AppointmentService.cancel_appointment(db, appointment_id, current_user, reason=reason)
-    # Non-blocking background job dispatch
+    # Non-blocking background job dispatch (only due jobs)
     pending_jobs = db.query(BackgroundJob).filter(
-        BackgroundJob.status == "PENDING"
+        BackgroundJob.status == JobStatus.PENDING,
+        BackgroundJob.scheduled_at <= datetime.utcnow(),
     ).order_by(BackgroundJob.created_at.desc()).limit(10).all()
     for job in pending_jobs:
         background_tasks.add_task(run_job_in_background, job.id)

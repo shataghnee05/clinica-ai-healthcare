@@ -691,6 +691,13 @@ class AppointmentService:
             except Exception as e:
                 log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
 
+            # Automatically schedule Appointment Reminder Job (failure-tolerant)
+            try:
+                from app.notification_service import NotificationService
+                NotificationService.schedule_appointment_reminder(db, appointment)
+            except Exception as e:
+                log_event("REMINDER_SCHEDULE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
+
             return appointment
 
         except HTTPException:
@@ -757,6 +764,13 @@ class AppointmentService:
             appointment._calendar_job_id = cal_job.id
         except Exception as exc:
             log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
+
+        # Cancel pending appointment reminder jobs (failure-tolerant)
+        try:
+            from app.notification_service import NotificationService
+            NotificationService.cancel_appointment_reminder(db, appointment.id)
+        except Exception as exc:
+            log_event("REMINDER_CANCEL_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
         return appointment
 
@@ -859,6 +873,14 @@ class AppointmentService:
             appointment._calendar_job_id = cal_job.id
         except Exception as exc:
             log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
+
+        # 7. Reschedule reminder: cancel old reminder and schedule reminder for new slot time
+        try:
+            from app.notification_service import NotificationService
+            NotificationService.cancel_appointment_reminder(db, appointment.id)
+            NotificationService.schedule_appointment_reminder(db, appointment)
+        except Exception as exc:
+            log_event("REMINDER_RESCHEDULE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
         return appointment
 
@@ -1140,6 +1162,7 @@ class DoctorLeaveService:
             try:
                 from app.notification_service import NotificationService
                 NotificationService.notify_doctor_leave_to_patient(db, appointment, leave)
+                NotificationService.cancel_appointment_reminder(db, appointment.id)
             except Exception as exc:
                 log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
             try:
@@ -1273,6 +1296,7 @@ class DoctorLeaveService:
             try:
                 from app.notification_service import NotificationService
                 NotificationService.notify_doctor_leave_to_patient(db, appointment, leave)
+                NotificationService.cancel_appointment_reminder(db, appointment.id)
             except Exception as exc:
                 log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
             try:
@@ -1334,18 +1358,51 @@ _FREQUENCY_MAP = {
     "once daily": 1,
     "once a day": 1,
     "1 time": 1,
+    "1x daily": 1,
+    "1x": 1,
+    "daily": 1,
+    "every day": 1,
+    "q.d.": 1,
+    "qd": 1,
     "twice daily": 2,
     "twice a day": 2,
     "2 times": 2,
+    "2x daily": 2,
+    "2x": 2,
+    "b.i.d.": 2,
+    "bid": 2,
     "three times daily": 3,
     "three times a day": 3,
     "3 times": 3,
+    "3x daily": 3,
+    "3x": 3,
+    "t.i.d.": 3,
+    "tid": 3,
     "four times daily": 4,
+    "four times a day": 4,
     "4 times": 4,
+    "4x daily": 4,
+    "4x": 4,
+    "q.i.d.": 4,
+    "qid": 4,
     "as needed": 0,
-    "every 8 hours": 3,
-    "every 6 hours": 4,
+    "prn": 0,
+    "p.r.n.": 0,
+    "every 24 hours": 1,
+    "every 24h": 1,
+    "every 24 hrs": 1,
     "every 12 hours": 2,
+    "every 12h": 2,
+    "every 12 hrs": 2,
+    "every 8 hours": 3,
+    "every 8h": 3,
+    "every 8 hrs": 3,
+    "every 6 hours": 4,
+    "every 6h": 4,
+    "every 6 hrs": 4,
+    "every 4 hours": 4,
+    "every 4h": 4,
+    "every 4 hrs": 4,
 }
 
 _DOSE_TIMES_BY_COUNT = {
@@ -1361,6 +1418,12 @@ def _parse_frequency(frequency_str: str) -> int:
     for key, val in _FREQUENCY_MAP.items():
         if key in f:
             return val
+    # Check for interval pattern like "every X hours" or "every X hrs" or "every X h"
+    m_int = re.search(r"every\s*(\d+)\s*(?:hour|hr|h)", f)
+    if m_int:
+        hrs = int(m_int.group(1))
+        if hrs > 0:
+            return max(1, min(24 // hrs, 4))
     # Fallback: look for digit
     m = re.search(r"(\d+)", f)
     if m:
@@ -1391,9 +1454,13 @@ class MedicationReminderService:
     ) -> List[MedicationReminder]:
         """
         Generate MedicationReminder rows for each medication in the prescription.
-        Reminders start from today and span the medication duration.
-        Processed through the existing BackgroundJob system — no separate scheduler.
+        Reminders start from today (or med.start_date) and span the medication duration.
+        Respects completed/cancelled appointments, start/end dates, and prevents duplicate reminders.
         """
+        if consultation.appointment and consultation.appointment.status == AppointmentStatus.CANCELLED:
+            log_event("REMINDER_GENERATION_SKIPPED", {"consultation_id": consultation.id, "reason": "Appointment cancelled"})
+            return []
+
         patient = consultation.patient
         if not patient:
             return []
@@ -1408,19 +1475,32 @@ class MedicationReminderService:
                 doses_per_day = 1
                 duration_days = 1
             else:
-                duration_days = _parse_duration_days(med.duration)
+                if med.start_date and med.end_date and med.end_date >= med.start_date:
+                    duration_days = (med.end_date - med.start_date).days + 1
+                else:
+                    duration_days = _parse_duration_days(med.duration)
 
             dose_times = _DOSE_TIMES_BY_COUNT.get(doses_per_day, _DOSE_TIMES_BY_COUNT[1])
 
-            # Update medication date range for reference
-            med.start_date = today
-            med.end_date = today + timedelta(days=duration_days - 1)
+            start_d = med.start_date or today
+            med.start_date = start_d
+            med.end_date = start_d + timedelta(days=duration_days - 1)
 
             for day_offset in range(duration_days):
-                reminder_date = today + timedelta(days=day_offset)
+                reminder_date = start_d + timedelta(days=day_offset)
                 for dose_time_str, dose_label in dose_times:
                     h, m_min = map(int, dose_time_str.split(":"))
                     scheduled_for = datetime.combine(reminder_date, time(h, m_min))
+
+                    # Guard against duplicate MedicationReminder
+                    existing = db.query(MedicationReminder).filter(
+                        MedicationReminder.medication_id == med.id,
+                        MedicationReminder.patient_id == patient.id,
+                        MedicationReminder.scheduled_for == scheduled_for,
+                    ).first()
+                    if existing:
+                        continue
+
                     reminder = MedicationReminder(
                         id=str(uuid.uuid4()),
                         medication_id=med.id,
