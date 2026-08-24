@@ -2,30 +2,43 @@
 
 A production-grade, concurrency-safe healthcare appointment management and clinical intelligence platform built with **FastAPI**, **SQLAlchemy 2.0**, **PostgreSQL / SQLite**, **Google Gemini AI**, **Google Calendar API**, **Resend transactional email**, and **React 19 / TypeScript / Tailwind CSS**.
 
-Hosted Web Application: **[https://clinica-ai-healthcare-dc52.vercel.app](https://clinica-ai-healthcare-dc52.vercel.app)**  
-GitHub Repository: **[https://github.com/shataghnee05/clinica-ai-healthcare](https://github.com/shataghnee05/clinica-ai-healthcare)**
+---
+
+## 🌐 Live Application
+- **Frontend Web Application (Vercel)**: [https://clinica-ai-healthcare-dc52.vercel.app](https://clinica-ai-healthcare-dc52.vercel.app)
+- **Backend API Service (Render)**: [https://clinica-ai-healthcare.onrender.com](https://clinica-ai-healthcare.onrender.com)
+- **Interactive Swagger Documentation**: [https://clinica-ai-healthcare.onrender.com/docs](https://clinica-ai-healthcare.onrender.com/docs)
+- **GitHub Repository**: [https://github.com/shataghnee05/clinica-ai-healthcare](https://github.com/shataghnee05/clinica-ai-healthcare)
+
+---
+
+## 🏛️ System Design
+A detailed ~800-word system design document covering double-booking prevention, doctor-leave conflicts, slot holds, and notification failure handling is available at:
+👉 **[View System Design](./SystemDesign.md)**
 
 ---
 
 ## 📋 Table of Contents
-1. [Project Overview & Objectives](#-project-overview--objectives)
-2. [Complete Feature Matrix](#-complete-feature-matrix)
-3. [User Workflows](#-user-workflows)
+1. [Live Application](#-live-application)
+2. [System Design](#️-system-design)
+3. [Project Overview & Objectives](#-project-overview--objectives)
+4. [Complete Feature Matrix](#-complete-feature-matrix)
+5. [User Workflows](#-user-workflows)
    - [Patient Workflow](#1-patient-workflow)
    - [Doctor Workflow](#2-doctor-workflow)
    - [Admin Workflow](#3-admin-workflow)
-4. [Technology Stack & System Architecture](#-technology-stack--system-architecture)
-5. [Local Setup & Installation Guide](#-local-setup--installation-guide)
-6. [Environment Variables & Configuration (`.env.example`)](#-environment-variables--configuration-envexample)
-7. [Comprehensive API Reference](#-comprehensive-api-reference)
-8. [Database Schema & Entity Relationship (ER) Diagram](#-database-schema--entity-relationship-er-diagram)
-9. [Google Gemini AI Clinical Intelligence Workflows](#-google-gemini-ai-clinical-intelligence-workflows)
-10. [Google Calendar OAuth 2.0 Synchronization](#-google-calendar-oauth-20-synchronization)
-11. [Email & Notification Infrastructure](#-email--notification-infrastructure)
-12. [Background Job Worker Architecture](#-background-job-worker-architecture)
-13. [Authentication & Role-Based Access Control (RBAC)](#-authentication--role-based-access-control-rbac)
-14. [Testing & Quality Assurance](#-testing--quality-assurance)
-15. [Deployment Guide](#-deployment-guide)
+6. [Technology Stack & System Architecture](#-technology-stack--system-architecture)
+7. [Local Setup & Installation Guide](#-local-setup--installation-guide)
+8. [Environment Variables & Configuration (`.env.example`)](#-environment-variables--configuration-envexample)
+9. [Comprehensive API Reference](#-comprehensive-api-reference)
+10. [Database Schema & Entity Relationship (ER) Diagram](#-database-schema--entity-relationship-er-diagram)
+11. [Google Gemini AI Clinical Intelligence Workflows](#-google-gemini-ai-clinical-intelligence-workflows)
+12. [Google Calendar OAuth 2.0 Synchronization](#-google-calendar-oauth-20-synchronization)
+13. [Email & Notification Infrastructure](#-email--notification-infrastructure)
+14. [Background Job Worker Architecture](#-background-job-worker-architecture)
+15. [Authentication & Role-Based Access Control (RBAC)](#-authentication--role-based-access-control-rbac)
+16. [Testing & Quality Assurance](#-testing--quality-assurance)
+17. [Deployment Guide](#-deployment-guide)
 
 ---
 
