@@ -26,8 +26,6 @@ GitHub Repository: **[https://github.com/shataghnee05/clinica-ai-healthcare](htt
 13. [Authentication & Role-Based Access Control (RBAC)](#-authentication--role-based-access-control-rbac)
 14. [Testing & Quality Assurance](#-testing--quality-assurance)
 15. [Deployment Guide](#-deployment-guide)
-16. [Known Limitations & Design Trade-offs](#-known-limitations--design-trade-offs)
-17. [Submission Checklist & 800-Word System Design Write-Up](#-submission-checklist--system-design-write-up)
 
 ---
 
@@ -713,76 +711,3 @@ pytest -v
 2. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 3. Set environment variables from `.env.example` in provider dashboard.
 4. Database: Connect managed PostgreSQL instance (e.g. Supabase, Render PostgreSQL).
-
----
-
-## ⚠️ Known Limitations & Design Trade-offs
-
-1. **Background Worker Deployment**:
-   - In single-instance setups, jobs are processed using FastAPI `BackgroundTasks` and `/api/v1/admin/jobs/process-pending`. In high-volume multi-instance production environments, a dedicated Redis/Celery worker process is recommended.
-2. **AI Provider Fallback**:
-   - Google Gemini API is the primary AI provider with mock fallback for automated testing environments. Multi-model failover (e.g. Gemini to Claude/OpenAI) can be added to the provider strategy.
-3. **Slot Duration Granularity**:
-   - Slot generation generates contiguous fixed-length slots within daily working hours. Variable-length appointment booking on arbitrary start times is constrained to slot boundaries by design to prevent calendar fragmentation.
-
----
-
-## 📝 Submission Checklist & System Design Write-Up
-
-### Deliverables Checklist
-- [x] **Complete Source-Code Repository / ZIP**: Full backend and frontend code with seed data and test suite.
-- [x] **README.md**: Comprehensive documentation with setup guide, `.env.example`, API reference, database schema, LLM prompts, and Google Calendar setup.
-- [x] **Hosted Application URL**: [https://clinica-ai-healthcare-dc52.vercel.app](https://clinica-ai-healthcare-dc52.vercel.app)
-- [x] **800-Word System Design Write-Up**: Embedded below.
-
----
-
-### 🏛️ System Design Write-Up: Concurrency, Conflict Resolution, and Fault Tolerance
-
-#### 1. Double-Booking Prevention & Optimistic Concurrency Control (OCC)
-In modern healthcare scheduling, the greatest concurrency hazard is the "booking race," where multiple patients simultaneously select the same high-demand appointment slot. Standard pessimistic locking (`SELECT ... FOR UPDATE`) causes thread contention, database connection exhaustion, and latency spikes. Clinica solves this using a high-throughput **Optimistic Concurrency Control (OCC) and Slot-Hold state machine**:
-
-Each slot in the `slots` table maintains an integer `version` counter and a state column (`AVAILABLE`, `HELD`, `BOOKED`, `CANCELLED`). When a patient selects a slot, the system executes an atomic CAS update:
-```sql
-UPDATE slots
-SET status = 'HELD', held_by_patient_id = :patient_id,
-    hold_expires_at = :expires_at, version = version + 1
-WHERE id = :slot_id
-  AND (status = 'AVAILABLE' OR (status = 'HELD' AND hold_expires_at < :now));
-```
-Because the database engine guarantees atomicity on row updates, exactly one patient receives `rows_updated == 1`, while all competing requests receive `rows_updated == 0` and are immediately returned a clean `409 Conflict ("Slot is no longer available or is currently held")`.
-
-When the holding patient confirms their booking with symptoms, a second atomic CAS update transitions the slot from `HELD` to `BOOKED`:
-```sql
-UPDATE slots
-SET status = 'BOOKED', hold_expires_at = NULL, version = version + 1
-WHERE id = :slot_id
-  AND status = 'HELD'
-  AND held_by_patient_id = :patient_id
-  AND hold_expires_at >= :now;
-```
-If the patient abandons the booking or allows the 5-minute timer to expire, no manual unlock job is required: subsequent slot queries evaluate `hold_expires_at < now` and automatically treat the slot as available for re-holding.
-
-#### 2. Doctor Leave Conflict Resolution & Appointment Rescheduling
-Physician leave management requires careful balance between doctor flexibility and patient schedule preservation. Clinica implements a **three-stage leave workflow**:
-
-1. **Non-Destructive Impact Preview**: When a doctor requests leave, the system executes a read-only conflict query across `appointments` joining `slots` between `start_date` and `end_date`. The doctor views exactly which patient appointments will be affected without modifying any database records.
-2. **Administrative Approval Flow**: The doctor submits a formal leave application (`PENDING`). During this state, patient bookings remain confirmed. Upon hospital administrator review, approval triggers an atomic transaction:
-   - The leave status transitions to `APPROVED`.
-   - Conflicting `CONFIRMED` appointments have their status updated to `CANCELLED` with the explicit reason `"Doctor on approved leave (YYYY-MM-DD – YYYY-MM-DD)"`.
-   - Conflicting slot rows are atomically reset to `AVAILABLE` with `held_by_patient_id = NULL`.
-   - Any pending 24h appointment reminder background jobs for the cancelled appointments are immediately cancelled.
-   - Individualized `NOTIFY_DOCTOR_LEAVE` notification jobs are enqueued for every affected patient.
-3. **Reschedule Engine**: Patients or clinic staff can reschedule cancelled appointments. The `reschedule_appointment` endpoint atomically reserves a new slot on behalf of the patient, releases the previous slot, creates updated confirmation notifications, and schedules a new 24h reminder for the revised appointment time.
-
-#### 3. Fault-Tolerant Notification & External API Architecture
-A critical architectural principle in Clinica is **strict transaction isolation between core healthcare state and external third-party services** (Resend email, Google Gemini AI, and Google Calendar API):
-
-1. **Non-Blocking Asynchronous Job Queuing**: External network calls are never executed synchronously inside the database transaction that confirms an appointment or completes a consultation. Database commits complete in milliseconds, guaranteeing high availability and sub-50ms API response times.
-2. **Background Job Queue with Exponential Backoff**: When transactional emails or calendar syncs are dispatched, a `BackgroundJob` record is inserted with `status = 'PENDING'`, `attempts = 0`, and `scheduled_at`. If the Resend API or Google Calendar API encounters network timeouts or rate limits:
-   - The error is logged to `background_jobs.error_message`.
-   - The job attempt counter increments.
-   - The job is rescheduled with exponential backoff (`backoff_seconds = min(300, 2^attempts * 5)`).
-   - If maximum attempts (3) are exhausted, the job status transitions to `FAILED`.
-   - **Crucially, the appointment's `CONFIRMED` state in the database remains intact and is never rolled back.**
-3. **In-App Notification Decoupling**: In-app notifications (`Notification` model) are written to the database in the primary transaction. Even in catastrophic external email gateway outages, users retain full visibility of all appointment confirmations, leave notices, and medication reminders directly within their portal notification center.
