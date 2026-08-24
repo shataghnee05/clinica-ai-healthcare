@@ -47,6 +47,8 @@ import {
   HeartPulse,
   UserPlus,
   XCircle,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 export default function App() {
@@ -62,6 +64,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
   const [authFullName, setAuthFullName] = useState("");
   const [authInsurance, setAuthInsurance] = useState("Aetna, BlueCross");
   const [authError, setAuthError] = useState("");
@@ -148,6 +151,7 @@ export default function App() {
   const [adminNewDocName, setAdminNewDocName] = useState("");
   const [adminNewDocEmail, setAdminNewDocEmail] = useState("");
   const [adminNewDocPassword, setAdminNewDocPassword] = useState("");
+  const [showAdminDocPassword, setShowAdminDocPassword] = useState(false);
   const [adminNewDocSpecialization, setAdminNewDocSpecialization] = useState("Cardiology");
   const [adminNewDocBio, setAdminNewDocBio] = useState("");
   const [adminNewDocSlotDuration, setAdminNewDocSlotDuration] = useState<number>(30);
@@ -685,6 +689,20 @@ export default function App() {
     }
   };
 
+  // Admin Patient Management Handler
+  const handleAdminDeletePatient = async (patient: PatientAdmin) => {
+    if (!confirm(`Are you sure you want to delete patient "${patient.full_name}"? All associated appointments will also be removed. This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.admin.deletePatient(patient.id);
+      loadAdminPatients();
+      loadAdminStats();
+    } catch (err: any) {
+      alert("Failed to delete patient: " + err.message);
+    }
+  };
+
   // Admin Doctor Registration Handler
   const handleAdminRegisterDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1137,13 +1155,22 @@ export default function App() {
                   <div className="relative">
                     <Lock className="w-5 h-5 text-slate-400 absolute left-3.5 top-3.5" />
                     <input
-                      type="password"
+                      type={showAuthPassword ? "text" : "password"}
                       required
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
+                      className="w-full pl-11 pr-11 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowAuthPassword(!showAuthPassword)}
+                      className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus:outline-none"
+                      title={showAuthPassword ? "Hide password" : "Show password"}
+                      aria-label={showAuthPassword ? "Hide password" : "Show password"}
+                    >
+                      {showAuthPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
                   </div>
                 </div>
 
@@ -2540,9 +2567,20 @@ export default function App() {
                             <h4 className="font-bold text-base text-slate-900 dark:text-white">{patient.full_name}</h4>
                             <p className="text-xs text-slate-500 dark:text-slate-400">{patient.email}</p>
                           </div>
-                          <span className="px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-xs font-semibold">
-                            {patient.total_appointments} visits
-                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 text-xs font-semibold">
+                              {patient.total_appointments} visits
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleAdminDeletePatient(patient)}
+                              className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition"
+                              title={`Delete ${patient.full_name}`}
+                              aria-label={`Delete ${patient.full_name}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -3077,14 +3115,25 @@ export default function App() {
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                     Initial Password <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="password"
-                    required
-                    value={adminNewDocPassword}
-                    onChange={(e) => setAdminNewDocPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-indigo-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showAdminDocPassword ? "text" : "password"}
+                      required
+                      value={adminNewDocPassword}
+                      onChange={(e) => setAdminNewDocPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full p-2.5 pr-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminDocPassword(!showAdminDocPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus:outline-none"
+                      title={showAdminDocPassword ? "Hide password" : "Show password"}
+                      aria-label={showAdminDocPassword ? "Hide password" : "Show password"}
+                    >
+                      {showAdminDocPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
