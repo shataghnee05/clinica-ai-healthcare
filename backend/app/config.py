@@ -41,6 +41,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "https://clinica-ai-healthcare-dc52.vercel.app",
     ]
     AI_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
