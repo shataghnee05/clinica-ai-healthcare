@@ -7,7 +7,6 @@ from app.ai.providers.gemini_provider import GeminiProvider
 
 logger = logging.getLogger(__name__)
 
-
 class AIService:
     """
     Dedicated AI Clinical Assistant powered exclusively by Google Gemini AI.
@@ -26,5 +25,4 @@ class AIService:
     def generate_post_visit_summary(cls, consultation_data: Dict[str, Any], provider_name: Optional[str] = None) -> PostVisitSummaryResult:
         provider = cls.get_provider()
         return provider.generate_post_visit_summary(consultation_data)
-
 

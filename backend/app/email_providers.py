@@ -21,13 +21,11 @@ logger = logging.getLogger(__name__)
 
 RESEND_API_URL = "https://api.resend.com/emails"
 
-
 try:
     import resend
     HAS_RESEND_SDK = True
 except ImportError:
     HAS_RESEND_SDK = False
-
 
 class BaseEmailProvider(abc.ABC):
     """Abstract email provider interface."""
@@ -45,7 +43,6 @@ class BaseEmailProvider(abc.ABC):
         Returns: (success: bool, error_message: Optional[str])
         """
         pass
-
 
 class ResendEmailProvider(BaseEmailProvider):
     """
@@ -81,7 +78,6 @@ class ResendEmailProvider(BaseEmailProvider):
             else f"<div style='font-family:sans-serif;line-height:1.6;color:#333;'><pre style='white-space:pre-wrap;font-family:sans-serif;'>{body}</pre></div>"
         )
 
-        # 1. Use official Resend SDK if installed
         if HAS_RESEND_SDK:
             try:
                 resend.api_key = self.api_key
@@ -103,7 +99,6 @@ class ResendEmailProvider(BaseEmailProvider):
                 log_event("EMAIL_FAILED", {"provider": "resend", "to": to_email, "subject": subject, "error": error_msg})
                 return False, error_msg
 
-        # 2. Direct REST API Fallback via HTTPX
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -126,14 +121,13 @@ class ResendEmailProvider(BaseEmailProvider):
                     logger.info(f"[Resend] Email successfully sent to {to_email} (ID: {email_id})")
                     log_event("EMAIL_SENT", {"provider": "resend", "to": to_email, "subject": subject, "email_id": email_id})
                     return True, None
-                
-                # Non-2xx response from Resend
+
                 try:
                     err_json = res.json()
                     error_msg = err_json.get("message") or str(err_json)
                 except Exception:
                     error_msg = res.text
-                
+
                 full_error = f"Resend API error ({res.status_code}): {error_msg}"
                 logger.error(f"[Resend] {full_error}")
                 log_event("EMAIL_FAILED", {"provider": "resend", "to": to_email, "subject": subject, "error": full_error})
@@ -149,7 +143,6 @@ class ResendEmailProvider(BaseEmailProvider):
             logger.error(f"[Resend] {error_msg}")
             log_event("EMAIL_FAILED", {"provider": "resend", "to": to_email, "subject": subject, "error": error_msg})
             return False, error_msg
-
 
 class SMTPEmailProvider(BaseEmailProvider):
     """
@@ -191,7 +184,6 @@ class SMTPEmailProvider(BaseEmailProvider):
             log_event("EMAIL_FAILED", {"provider": "smtp", "to": to_email, "subject": subject, "error": error_msg})
             return False, error_msg
 
-
 class MockEmailProvider(BaseEmailProvider):
     """
     Mock Email Provider for local development & testing.
@@ -208,7 +200,6 @@ class MockEmailProvider(BaseEmailProvider):
         log_event("EMAIL_SENT_MOCK", {"provider": "mock", "to": to_email, "subject": subject})
         return True, None
 
-
 def get_email_provider() -> BaseEmailProvider:
     """
     Factory to instantiate the configured email provider.
@@ -222,5 +213,4 @@ def get_email_provider() -> BaseEmailProvider:
     elif provider_name in ("mock", "console", "none"):
         return MockEmailProvider()
 
-    # Fallback to Resend
     return ResendEmailProvider()

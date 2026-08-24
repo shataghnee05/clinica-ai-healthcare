@@ -7,9 +7,7 @@ import httpx
 from app.ai.base import LLMProvider
 from app.ai.schemas import PreVisitSummaryResult, PostVisitSummaryResult
 
-
 logger = logging.getLogger(__name__)
-
 
 class GeminiProvider(LLMProvider):
     """
@@ -47,7 +45,7 @@ class GeminiProvider(LLMProvider):
             if response.status_code != 200:
                 logger.error(f"Gemini API error ({response.status_code}): {response.text}")
                 raise RuntimeError(f"Gemini API returned status {response.status_code}: {response.text}")
-            
+
             data = response.json()
             raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
             return json.loads(raw_text)

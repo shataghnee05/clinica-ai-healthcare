@@ -7,7 +7,6 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-# Ensure backend directory is on sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import create_engine
@@ -30,7 +29,6 @@ if not db_url.startswith("sqlite"):
 
 engine = create_engine(db_url, **engine_kwargs)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 def override_get_db():
     db = TestingSessionLocal()
@@ -76,7 +74,6 @@ def admin_credentials():
         db_cleanup.rollback()
     finally:
         db_cleanup.close()
-
 
 @pytest.fixture(scope="session")
 def admin_headers(admin_credentials):
@@ -210,7 +207,6 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
     patient_tokens = []
     patient_ids = []
 
-    # Bulk create 20 test patients for concurrent execution
     fixed_hash = get_password_hash(TEST_DYNAMIC_PASS)
     db = TestingSessionLocal()
     try:
@@ -235,7 +231,6 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
     finally:
         db.close()
 
-
     def try_hold(args):
         token, p_id = args
         session = TestingSessionLocal()
@@ -249,22 +244,18 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
         finally:
             session.close()
 
-    # Concurrently execute 20 simultaneous hold requests against PostgreSQL
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_concurrent_patients) as executor:
         results = list(executor.map(try_hold, list(zip(patient_tokens, patient_ids))))
 
     successes = [r for r in results if r[2] == 200]
     conflicts = [r for r in results if r[2] == 409]
 
-    # Exactly ONE must succeed, and all 19 other concurrent attempts must receive 409 Conflict
     assert len(successes) == 1, f"Expected exactly 1 success, got {len(successes)}"
     assert len(conflicts) == num_concurrent_patients - 1, f"Expected {num_concurrent_patients - 1} conflicts, got {len(conflicts)}"
 
     winning_token = successes[0][0]
     losing_token = conflicts[0][0]
 
-
-    # Confirm appointment by losing patient must fail with 409 Conflict
     symptoms_text = "Severe chest discomfort and palpitations."
     res_bad_confirm = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {losing_token}"}, json={
         "slot_id": target_slot_id,
@@ -272,14 +263,12 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
     })
     assert res_bad_confirm.status_code in (400, 409)
 
-    # Empty symptoms validation
     res_empty_symptoms = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {winning_token}"}, json={
         "slot_id": target_slot_id,
         "symptoms": "   "
     })
     assert res_empty_symptoms.status_code == 422
 
-    # Successful confirmation by winning patient
     res_good_confirm = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {winning_token}"}, json={
         "slot_id": target_slot_id,
         "symptoms": symptoms_text
@@ -290,7 +279,6 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
     assert appt_data["status"] == "CONFIRMED"
     appt_id = appt_data["id"]
 
-    # Doctor agenda check
     res_doc_login = client.post("/api/v1/auth/login", json={
         "email": doc_email,
         "password": TEST_DYNAMIC_PASS
@@ -305,11 +293,9 @@ def test_slot_generation_and_20_threads_concurrency_race(admin_headers):
     assert len(agenda) == 1
     assert agenda[0]["symptoms"] == symptoms_text
 
-    # Unauthorized cancel attempt must return 403 Forbidden
     res_unauth_cancel = client.patch(f"/api/v1/appointments/{appt_id}/cancel", headers={"Authorization": f"Bearer {losing_token}"})
     assert res_unauth_cancel.status_code == 403
 
-    # Authorized cancel by patient
     res_cancel = client.patch(f"/api/v1/appointments/{appt_id}/cancel", headers={"Authorization": f"Bearer {winning_token}"})
     assert res_cancel.status_code == 200
     assert res_cancel.json()["status"] == "OK"
@@ -349,7 +335,6 @@ def test_expired_slot_hold_reclamation(admin_headers):
     assert len(slots) > 0
     slot_id = slots[0]["id"]
 
-    # Register Patient A and acquire initial hold
     r_a = client.post("/api/v1/auth/register", json={
         "email": f"patient_a_{rand_suffix}@example.com",
         "password": TEST_DYNAMIC_PASS,
@@ -362,7 +347,6 @@ def test_expired_slot_hold_reclamation(admin_headers):
     res_hold_a = client.post(f"/api/v1/appointments/slots/{slot_id}/hold", headers={"Authorization": f"Bearer {token_a}"})
     assert res_hold_a.status_code == 200
 
-    # Simulate expiration in DB
     db = TestingSessionLocal()
     try:
         db_slot = db.query(Slot).filter(Slot.id == slot_id).first()
@@ -371,7 +355,6 @@ def test_expired_slot_hold_reclamation(admin_headers):
     finally:
         db.close()
 
-    # Register Patient B
     r_b = client.post("/api/v1/auth/register", json={
         "email": f"patient_b_{rand_suffix}@example.com",
         "password": TEST_DYNAMIC_PASS,
@@ -381,12 +364,10 @@ def test_expired_slot_hold_reclamation(admin_headers):
     token_b = r_b.json()["access_token"]
     user_b_id = r_b.json()["user"]["id"]
 
-    # Patient B should be able to reclaim expired hold
     res_hold_b = client.post(f"/api/v1/appointments/slots/{slot_id}/hold", headers={"Authorization": f"Bearer {token_b}"})
     assert res_hold_b.status_code == 200
     assert res_hold_b.json()["held_by_patient_id"] == user_b_id
 
-    # Patient A now attempting to confirm should fail with 409
     res_a_confirm = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {token_a}"}, json={
         "slot_id": slot_id,
         "symptoms": "Old symptoms from expired hold"
@@ -405,7 +386,6 @@ def test_admin_patient_management(admin_headers):
     assert r.status_code == 201
     patient_id = r.json()["user"]["id"]
 
-    # Admin lists patients
     res_list = client.get("/api/v1/admin/patients", headers=admin_headers)
     assert res_list.status_code == 200
     patients = res_list.json()
@@ -413,12 +393,10 @@ def test_admin_patient_management(admin_headers):
     assert len(matching) == 1
     assert matching[0]["email"] == p_email
 
-    # Admin deletes patient
     res_delete = client.delete(f"/api/v1/admin/patients/{patient_id}", headers=admin_headers)
     assert res_delete.status_code == 200
     assert res_delete.json()["status"] == "OK"
 
-    # Verify patient is gone
     res_list_after = client.get("/api/v1/admin/patients", headers=admin_headers)
     assert res_list_after.status_code == 200
     matching_after = [p for p in res_list_after.json() if p["id"] == patient_id]
@@ -436,5 +414,4 @@ def cleanup_test_data_after_tests():
         db.rollback()
     finally:
         db.close()
-
 

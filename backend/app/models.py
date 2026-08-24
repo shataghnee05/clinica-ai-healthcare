@@ -115,7 +115,7 @@ class Appointment(Base):
     symptoms = Column(Text, nullable=False)
     status = Column(Enum(AppointmentStatus), default=AppointmentStatus.CONFIRMED, nullable=False)
     booked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    # Phase 2B additions
+
     cancellation_reason = Column(Text, nullable=True)
     rescheduled_from_slot_id = Column(String(36), ForeignKey("slots.id", ondelete="SET NULL"), nullable=True)
     google_event_id = Column(String(255), nullable=True)
@@ -127,11 +127,10 @@ class Appointment(Base):
     pre_visit_summary = relationship("PreVisitSummary", back_populates="appointment", uselist=False, cascade="all, delete-orphan")
     consultation = relationship("Consultation", back_populates="appointment", uselist=False, cascade="all, delete-orphan")
 
-
 class JobType(str, enum.Enum):
     PRE_VISIT_SUMMARY = "PRE_VISIT_SUMMARY"
     POST_VISIT_SUMMARY = "POST_VISIT_SUMMARY"
-    # Phase 2B notification jobs
+
     NOTIFY_APPOINTMENT_CONFIRMATION = "NOTIFY_APPOINTMENT_CONFIRMATION"
     NOTIFY_APPOINTMENT_CANCELLATION = "NOTIFY_APPOINTMENT_CANCELLATION"
     NOTIFY_APPOINTMENT_REMINDER = "NOTIFY_APPOINTMENT_REMINDER"
@@ -139,30 +138,25 @@ class JobType(str, enum.Enum):
     MEDICATION_REMINDER = "MEDICATION_REMINDER"
     GOOGLE_CALENDAR_SYNC = "GOOGLE_CALENDAR_SYNC"
 
-
 class JobStatus(str, enum.Enum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
-
 class UrgencyLevel(str, enum.Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
-
 
 class AISummaryStatus(str, enum.Enum):
     PENDING = "PENDING"
     GENERATED = "GENERATED"
     FAILED = "FAILED"
 
-
 class ConsultationStatus(str, enum.Enum):
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
-
 
 class NotificationType(str, enum.Enum):
     APPOINTMENT_CONFIRMATION = "APPOINTMENT_CONFIRMATION"
@@ -173,18 +167,15 @@ class NotificationType(str, enum.Enum):
     DOCTOR_LEAVE_REJECTION = "DOCTOR_LEAVE_REJECTION"
     MEDICATION_REMINDER = "MEDICATION_REMINDER"
 
-
 class LeaveStatus(str, enum.Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
 
-
 class MedicationReminderStatus(str, enum.Enum):
     PENDING = "PENDING"
     SENT = "SENT"
     FAILED = "FAILED"
-
 
 class BackgroundJob(Base):
     __tablename__ = "background_jobs"
@@ -202,7 +193,6 @@ class BackgroundJob(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-
 class PreVisitSummary(Base):
     __tablename__ = "pre_visit_summaries"
 
@@ -216,7 +206,6 @@ class PreVisitSummary(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     appointment = relationship("Appointment", back_populates="pre_visit_summary")
-
 
 class Consultation(Base):
     __tablename__ = "consultations"
@@ -238,7 +227,6 @@ class Consultation(Base):
     prescription = relationship("Prescription", back_populates="consultation", uselist=False, cascade="all, delete-orphan")
     post_visit_summary = relationship("PostVisitSummary", back_populates="consultation", uselist=False, cascade="all, delete-orphan")
 
-
 class Prescription(Base):
     __tablename__ = "prescriptions"
 
@@ -250,7 +238,6 @@ class Prescription(Base):
     consultation = relationship("Consultation", back_populates="prescription")
     medications = relationship("Medication", back_populates="prescription", cascade="all, delete-orphan")
 
-
 class Medication(Base):
     __tablename__ = "medications"
 
@@ -261,12 +248,11 @@ class Medication(Base):
     frequency = Column(String(100), nullable=False)
     duration = Column(String(100), nullable=False)
     instructions = Column(Text, default="", nullable=True)
-    start_date = Column(Date, nullable=True)   # Phase 2B: for reminder scheduling
-    end_date = Column(Date, nullable=True)     # Phase 2B: for reminder scheduling
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
 
     prescription = relationship("Prescription", back_populates="medications")
     reminders = relationship("MedicationReminder", back_populates="medication", cascade="all, delete-orphan")
-
 
 class PostVisitSummary(Base):
     __tablename__ = "post_visit_summaries"
@@ -281,9 +267,6 @@ class PostVisitSummary(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     consultation = relationship("Consultation", back_populates="post_visit_summary")
-
-
-# ── Phase 2B New Models ──────────────────────────────────────────────────────
 
 class DoctorLeave(Base):
     """Doctor leave request and admin approval record."""
@@ -307,7 +290,6 @@ class DoctorLeave(Base):
     created_by_admin = relationship("User", foreign_keys=[created_by_admin_id])
     reviewed_by_admin = relationship("User", foreign_keys=[reviewed_by_admin_id])
 
-
 class Notification(Base):
     """In-app notification record for a user."""
     __tablename__ = "notifications"
@@ -318,14 +300,13 @@ class Notification(Base):
     title = Column(String(255), nullable=False)
     body = Column(Text, nullable=False)
     is_read = Column(Boolean, default=False, nullable=False)
-    reference_id = Column(String(36), nullable=True)   # appointment_id, leave_id, etc.
-    job_id = Column(String(36), nullable=True)         # linked BackgroundJob id
+    reference_id = Column(String(36), nullable=True)
+    job_id = Column(String(36), nullable=True)
     email_sent = Column(Boolean, default=False, nullable=False)
     email_error = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("User", back_populates="notifications")
-
 
 class MedicationReminder(Base):
     """Scheduled reminder for a single medication dose."""
@@ -335,7 +316,7 @@ class MedicationReminder(Base):
     medication_id = Column(String(36), ForeignKey("medications.id", ondelete="CASCADE"), nullable=False, index=True)
     patient_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     scheduled_for = Column(DateTime, nullable=False, index=True)
-    dose_label = Column(String(100), nullable=False, default="")   # e.g. "Morning dose"
+    dose_label = Column(String(100), nullable=False, default="")
     status = Column(Enum(MedicationReminderStatus), default=MedicationReminderStatus.PENDING, nullable=False)
     job_id = Column(String(36), nullable=True)
     sent_at = Column(DateTime, nullable=True)
@@ -344,7 +325,6 @@ class MedicationReminder(Base):
 
     medication = relationship("Medication", back_populates="reminders")
     patient = relationship("User")
-
 
 class UserGoogleAccount(Base):
     """Google OAuth and Google Calendar connection for a user."""
@@ -364,7 +344,6 @@ class UserGoogleAccount(Base):
 
     user = relationship("User", back_populates="google_account")
 
-
 class PasswordResetOTP(Base):
     """Stores one-time passwords (OTP) for user password resets with expiration."""
     __tablename__ = "password_reset_otps"
@@ -376,7 +355,6 @@ class PasswordResetOTP(Base):
     is_used = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-
 from sqlalchemy.pool import NullPool
 
 connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
@@ -387,14 +365,12 @@ if not settings.DATABASE_URL.startswith("sqlite"):
 engine = create_engine(settings.DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
-
 
 def run_schema_migrations():
     """Ensure newly added columns exist in DB (PostgreSQL / SQLite) if not already present."""
@@ -427,7 +403,6 @@ def run_schema_migrations():
                 try: conn.execute(text("ALTER TABLE appointments ADD COLUMN google_event_id VARCHAR(255)"))
                 except Exception: pass
 
-        # PostgreSQL Enum additions & constraint relaxes
         if engine.dialect.name == "postgresql":
             try: conn.execute(text("ALTER TABLE doctor_leaves ALTER COLUMN confirmed_at DROP NOT NULL"))
             except Exception: pass
@@ -447,12 +422,10 @@ def run_schema_migrations():
     except Exception as e:
         pass
 
-    # Ensure tables exist
     try:
         Base.metadata.create_all(bind=engine)
     except Exception:
         pass
-
 
 try:
     run_schema_migrations()

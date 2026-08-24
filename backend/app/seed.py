@@ -81,11 +81,9 @@ def clean_old_and_test_accounts(db):
         print("[CLEANUP] No test accounts or old British doctor accounts found.")
         return
 
-    # Find DoctorProfiles linked to target users
     target_doctor_profiles = db.query(DoctorProfile).filter(DoctorProfile.user_id.in_(target_user_ids)).all()
     target_doc_profile_ids = [p.id for p in target_doctor_profiles]
 
-    # 1. Delete dependent summaries & consultations linked to appointments
     target_appts = db.query(Appointment).filter(
         (Appointment.patient_id.in_(target_user_ids)) | (Appointment.doctor_id.in_(target_doc_profile_ids))
     ).all()
@@ -106,29 +104,24 @@ def clean_old_and_test_accounts(db):
             db.delete(c)
         db.query(Appointment).filter(Appointment.id.in_(target_appt_ids)).delete(synchronize_session=False)
 
-    # 2. Clear held slots
     db.query(Slot).filter(Slot.held_by_patient_id.in_(target_user_ids)).update({
         Slot.held_by_patient_id: None,
         Slot.status: "AVAILABLE",
         Slot.hold_expires_at: None,
     }, synchronize_session=False)
 
-    # 3. Delete slots of target doctors
     if target_doc_profile_ids:
         db.query(DoctorLeave).filter(DoctorLeave.doctor_id.in_(target_doc_profile_ids)).delete(synchronize_session=False)
         db.query(Slot).filter(Slot.doctor_id.in_(target_doc_profile_ids)).delete(synchronize_session=False)
         db.query(DoctorProfile).filter(DoctorProfile.id.in_(target_doc_profile_ids)).delete(synchronize_session=False)
 
-    # 4. Delete notifications & google accounts of target users
     db.query(Notification).filter(Notification.user_id.in_(target_user_ids)).delete(synchronize_session=False)
     db.query(UserGoogleAccount).filter(UserGoogleAccount.user_id.in_(target_user_ids)).delete(synchronize_session=False)
     db.query(MedicationReminder).filter(MedicationReminder.patient_id.in_(target_user_ids)).delete(synchronize_session=False)
 
-    # 5. Delete Users
     deleted_count = db.query(User).filter(User.id.in_(target_user_ids)).delete(synchronize_session=False)
     db.commit()
     print(f"[CLEANUP] Successfully purged {deleted_count} legacy test & old doctor accounts from database.")
-
 
 def seed():
     """
@@ -143,13 +136,11 @@ def seed():
     db = SessionLocal()
 
     try:
-        # Step 1: Clean legacy test and British doctor accounts
+
         clean_old_and_test_accounts(db)
 
-        # Step 2: Resolve doctor password
         doctor_password = os.getenv("SEED_DOCTOR_PASSWORD", "ClinicaDoctor2026!")
 
-        # Step 3: Authentic Indian Doctors to seed
         doctors_to_create = [
             {
                 "email": "dr.rajesh.sharma@clinica.health",
@@ -224,7 +215,6 @@ def seed():
                     SlotService.generate_slots_for_doctor(db, profile.id, today, today + timedelta(days=14))
                     print(f"[DEV SEED] Refreshed physician: {d['full_name']} ({d['email']})")
 
-        # Step 4: Development Admin User
         admin_email = os.getenv("SEED_ADMIN_EMAIL", "admin@clinica.health")
         admin_password = os.getenv("SEED_ADMIN_PASSWORD", "ClinicaAdmin2026!")
         existing_admin = db.query(User).filter(User.email == admin_email).first()

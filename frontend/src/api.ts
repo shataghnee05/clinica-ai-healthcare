@@ -243,7 +243,6 @@ export const api = {
 
     getStats: () => request<SystemStats>("/admin/stats"),
 
-    // Phase 2B Admin Leave APIs
     previewLeave: (doctorId: string, startDate: string, endDate: string, reason?: string) =>
       request<LeavePreview>(`/admin/doctors/${doctorId}/leaves/preview`, {
         method: "POST",
@@ -330,7 +329,6 @@ export const api = {
       request<import("./types").PostVisitSummary>(`/consultations/${consultationId}/post-visit-summary`),
   },
 
-  // Phase 2B Notifications & Reminders APIs
   notifications: {
     getMy: () => request<Notification[]>("/notifications/my"),
     markRead: (id: string) => request<Notification>(`/notifications/${id}/read`, { method: "PATCH" }),

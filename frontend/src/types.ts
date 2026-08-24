@@ -154,8 +154,6 @@ export interface Consultation {
   pre_visit_summary?: PreVisitSummary | null;
 }
 
-// ── Phase 2B Types ──────────────────────────────────────────────────────────
-
 export type NotificationType =
   | "APPOINTMENT_CONFIRMATION"
   | "APPOINTMENT_CANCELLATION"

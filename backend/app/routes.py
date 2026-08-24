@@ -54,8 +54,6 @@ from app.services import (
     ConsultationService,
 )
 
-
-
 api_router = APIRouter()
 
 @api_router.post("/auth/register", response_model=Token, status_code=status.HTTP_201_CREATED)
@@ -207,7 +205,7 @@ def confirm_appointment(
     db: Session = Depends(get_db),
 ):
     appointment = AppointmentService.confirm_appointment(db, data, current_user.id)
-    # Non-blocking background job dispatch (only due jobs)
+
     pending_jobs = db.query(BackgroundJob).filter(
         BackgroundJob.status == JobStatus.PENDING,
         BackgroundJob.scheduled_at <= datetime.utcnow(),
@@ -256,7 +254,7 @@ def cancel_appointment(
 ):
     reason = data.reason if data else None
     appointment = AppointmentService.cancel_appointment(db, appointment_id, current_user, reason=reason)
-    # Non-blocking background job dispatch (only due jobs)
+
     pending_jobs = db.query(BackgroundJob).filter(
         BackgroundJob.status == JobStatus.PENDING,
         BackgroundJob.scheduled_at <= datetime.utcnow(),
@@ -355,8 +353,6 @@ def admin_delete_patient(
     AdminService.delete_patient(db, patient_id)
     return {"status": "OK", "message": "Patient removed successfully"}
 
-# --- PHASE 2A: CONSULTATION & AI WORKFLOW ENDPOINTS ---
-
 @api_router.get("/appointments/{appointment_id}/pre-visit-summary", response_model=PreVisitSummaryOut)
 def get_pre_visit_summary(
     appointment_id: str,
@@ -433,5 +429,4 @@ def admin_process_pending_jobs(
     from app.jobs import JobManager
     count = JobManager.process_pending_jobs(db, limit=20)
     return {"status": "OK", "jobs_processed": count}
-
 

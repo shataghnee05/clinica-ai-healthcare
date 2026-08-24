@@ -34,10 +34,7 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 GOOGLE_CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 
-
 class GoogleCalendarService:
-
-    # ── OAuth 2.0 Flow ──────────────────────────────────────────────────────────
 
     @staticmethod
     def get_authorization_url(state: str = "login", redirect_uri: Optional[str] = None) -> str:
@@ -45,9 +42,9 @@ class GoogleCalendarService:
         Generate the Google OAuth 2.0 authorization consent URL for localhost development.
         """
         cb_uri = redirect_uri or settings.GOOGLE_REDIRECT_URI or "http://localhost:5173/auth/google/callback"
-        
+
         if not settings.GOOGLE_CLIENT_ID:
-            # Localhost dev fallback URL when credentials are not configured yet
+
             params = {
                 "code": f"mock_dev_code_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
                 "state": state,
@@ -77,7 +74,6 @@ class GoogleCalendarService:
         """
         cb_uri = redirect_uri or settings.GOOGLE_REDIRECT_URI or "http://localhost:5173/auth/google/callback"
 
-        # Check for dev mode fallback
         if not settings.GOOGLE_CLIENT_ID or code.startswith("mock_dev_code"):
             logger.info("Using localhost dev mode for Google OAuth token exchange")
             return {
@@ -132,7 +128,6 @@ class GoogleCalendarService:
         if not account.refresh_token:
             return account.access_token
 
-        # Dev mode check
         if account.refresh_token.startswith("mock_refresh_token") or not settings.GOOGLE_CLIENT_ID:
             account.access_token = f"mock_access_token_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
             account.token_expiry = datetime.utcnow() + timedelta(hours=1)
@@ -171,8 +166,6 @@ class GoogleCalendarService:
         if account.token_expiry and account.token_expiry <= datetime.utcnow() + timedelta(minutes=5):
             return GoogleCalendarService.refresh_access_token(db, account)
         return account.access_token
-
-    # ── Secure Account Association ──────────────────────────────────────────────
 
     @staticmethod
     def save_user_google_account(
@@ -254,8 +247,6 @@ class GoogleCalendarService:
             "connected_at": account.created_at,
         }
 
-    # ── Idempotent Calendar Event Operations ────────────────────────────────────
-
     @staticmethod
     def _build_event_body(appointment: Appointment) -> Dict[str, Any]:
         """
@@ -324,7 +315,7 @@ class GoogleCalendarService:
         """
         Create a new event in the user's primary Google Calendar idempotently.
         """
-        # Localhost Dev mode simulation
+
         if not settings.GOOGLE_CLIENT_ID or account.access_token.startswith("mock_access_token"):
             mock_id = f"gcal_evt_{appointment.id[:8]}_{int(datetime.utcnow().timestamp())}"
             log_event("GOOGLE_CALENDAR_EVENT_CREATED_DEV", {
@@ -375,7 +366,6 @@ class GoogleCalendarService:
         if not event_id:
             return GoogleCalendarService.create_calendar_event(db, account, appointment)
 
-        # Localhost Dev mode simulation
         if not settings.GOOGLE_CLIENT_ID or account.access_token.startswith("mock_access_token"):
             log_event("GOOGLE_CALENDAR_EVENT_UPDATED_DEV", {
                 "user_id": account.user_id,
@@ -397,7 +387,7 @@ class GoogleCalendarService:
             with httpx.Client(timeout=15.0) as client:
                 res = client.patch(url, json=event_body, headers=headers)
                 if res.status_code in (404, 410):
-                    # Event was removed externally — recreate idempotently
+
                     logger.warning(f"Event {event_id} not found in Google Calendar; recreating.")
                     return GoogleCalendarService.create_calendar_event(db, account, appointment)
                 res.raise_for_status()
@@ -427,7 +417,6 @@ class GoogleCalendarService:
         if not event_id:
             return True
 
-        # Localhost Dev mode simulation
         if not settings.GOOGLE_CLIENT_ID or account.access_token.startswith("mock_access_token"):
             log_event("GOOGLE_CALENDAR_EVENT_DELETED_DEV", {
                 "user_id": account.user_id,
@@ -459,8 +448,6 @@ class GoogleCalendarService:
             logger.error(f"Google Calendar delete network error: {exc}")
             raise
 
-    # ── Master Synchronization Job Handler ──────────────────────────────────────
-
     @staticmethod
     def process_calendar_sync_job(db: Session, job: BackgroundJob):
         """
@@ -478,7 +465,6 @@ class GoogleCalendarService:
             job.result = {"status": "skipped", "reason": "Appointment not found"}
             return
 
-        # Find connected Google accounts for patient and doctor
         accounts_to_sync = []
 
         patient_account = db.query(UserGoogleAccount).filter(
@@ -508,7 +494,7 @@ class GoogleCalendarService:
             try:
                 if action == "CREATE":
                     if synced_event_id:
-                        # Idempotent: event exists, update it instead of creating duplicates
+
                         res_id = GoogleCalendarService.update_calendar_event(db, account, appointment, synced_event_id)
                     else:
                         res_id = GoogleCalendarService.create_calendar_event(db, account, appointment)

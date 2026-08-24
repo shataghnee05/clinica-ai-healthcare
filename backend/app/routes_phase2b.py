@@ -35,9 +35,6 @@ from app.services import (
 
 phase2b_router = APIRouter()
 
-
-# ── Doctor Leave Endpoints (Doctor Self-Service) ──────────────────────────────
-
 @phase2b_router.post(
     "/doctor/leaves/preview",
     response_model=DoctorLeavePreviewOut,
@@ -52,7 +49,6 @@ def doctor_preview_own_leave(
     if not profile:
         raise HTTPException(status_code=404, detail="Doctor profile not found")
     return DoctorLeaveService.preview_leave(db, profile.id, data.start_date, data.end_date)
-
 
 @phase2b_router.post(
     "/doctor/leaves/apply",
@@ -72,7 +68,6 @@ def doctor_apply_own_leave(
         db, profile.id, data.start_date, data.end_date, data.reason or "", current_user
     )
 
-
 @phase2b_router.post(
     "/doctor/leaves/confirm",
     response_model=DoctorLeaveOut,
@@ -91,7 +86,6 @@ def doctor_confirm_own_leave_compat(
         db, profile.id, data.start_date, data.end_date, data.reason or "", current_user
     )
 
-
 @phase2b_router.get(
     "/doctor/leaves/my",
     response_model=List[DoctorLeaveOut],
@@ -106,7 +100,6 @@ def list_my_doctor_leaves(
         raise HTTPException(status_code=404, detail="Doctor profile not found")
     return DoctorLeaveService.get_leaves(db, profile.id)
 
-
 @phase2b_router.delete("/doctor/leaves/{leave_id}", status_code=status.HTTP_200_OK)
 def delete_own_doctor_leave(
     leave_id: str,
@@ -118,9 +111,6 @@ def delete_own_doctor_leave(
         raise HTTPException(status_code=404, detail="Doctor profile not found")
     DoctorLeaveService.delete_leave(db, leave_id, current_user)
     return {"status": "OK", "message": "Leave record deleted"}
-
-
-# ── Admin Doctor Leave Endpoints ──────────────────────────────────────────────
 
 @phase2b_router.get(
     "/admin/leaves",
@@ -134,7 +124,6 @@ def admin_list_all_leaves(
 ):
     """Admin lists all leave applications across doctors with optional filters."""
     return DoctorLeaveService.get_leaves(db, doctor_id=doctor_id, status_filter=status_filter)
-
 
 @phase2b_router.post(
     "/admin/leaves/{leave_id}/approve",
@@ -159,7 +148,6 @@ def admin_approve_leave(
         background_tasks.add_task(run_job_in_background, job.id)
     return leave
 
-
 @phase2b_router.post(
     "/admin/leaves/{leave_id}/reject",
     response_model=DoctorLeaveOut,
@@ -177,7 +165,6 @@ def admin_reject_leave(
     reason = data.reason if data and data.reason else "Leave request was not approved by administration."
     return DoctorLeaveService.reject_leave(db, leave_id, reason, current_user)
 
-
 @phase2b_router.post(
     "/admin/doctors/{doctor_id}/leaves/preview",
     response_model=DoctorLeavePreviewOut,
@@ -193,7 +180,6 @@ def preview_doctor_leave(
     Does NOT create any records.
     """
     return DoctorLeaveService.preview_leave(db, doctor_id, data.start_date, data.end_date)
-
 
 @phase2b_router.post(
     "/admin/doctors/{doctor_id}/leaves/confirm",
@@ -222,7 +208,6 @@ def confirm_doctor_leave(
         background_tasks.add_task(run_job_in_background, job.id)
     return leave
 
-
 @phase2b_router.get(
     "/admin/doctors/{doctor_id}/leaves",
     response_model=List[DoctorLeaveOut],
@@ -235,7 +220,6 @@ def list_doctor_leaves(
     """List all leaves for a given doctor."""
     return DoctorLeaveService.get_leaves(db, doctor_id)
 
-
 @phase2b_router.delete("/admin/leaves/{leave_id}", status_code=status.HTTP_200_OK)
 def delete_doctor_leave(
     leave_id: str,
@@ -244,11 +228,6 @@ def delete_doctor_leave(
 ):
     DoctorLeaveService.delete_leave(db, leave_id, current_user)
     return {"status": "OK", "message": "Leave record deleted"}
-
-
-
-
-# ── Appointment Rescheduling ──────────────────────────────────────────────────
 
 @phase2b_router.post("/appointments/{appointment_id}/reschedule", response_model=AppointmentOut)
 def reschedule_appointment(
@@ -266,7 +245,7 @@ def reschedule_appointment(
     appointment = AppointmentService.reschedule_appointment(
         db, appointment_id, data.new_slot_id, current_user
     )
-    # Process pending notification jobs in background (only due jobs)
+
     pending_jobs = db.query(BackgroundJob).filter(
         BackgroundJob.status == JobStatus.PENDING,
         BackgroundJob.scheduled_at <= datetime.utcnow(),
@@ -276,9 +255,6 @@ def reschedule_appointment(
 
     return AppointmentService._serialize_appointment(appointment)
 
-
-# ── Notifications ─────────────────────────────────────────────────────────────
-
 @phase2b_router.get("/notifications/my", response_model=List[NotificationOut])
 def get_my_notifications(
     current_user: User = Depends(get_current_user),
@@ -286,7 +262,6 @@ def get_my_notifications(
 ):
     """Get all notifications for the current user (patient or doctor)."""
     return NotificationQueryService.get_user_notifications(db, current_user.id)
-
 
 @phase2b_router.patch("/notifications/{notification_id}/read", response_model=NotificationOut)
 def mark_notification_read(
@@ -296,9 +271,6 @@ def mark_notification_read(
 ):
     return NotificationQueryService.mark_read(db, notification_id, current_user.id)
 
-
-# ── Medication Reminders ──────────────────────────────────────────────────────
-
 @phase2b_router.get("/medication-reminders/my", response_model=List[MedicationReminderOut])
 def get_my_medication_reminders(
     current_user: User = Depends(require_patient),
@@ -306,9 +278,6 @@ def get_my_medication_reminders(
 ):
     """Get medication reminders for the current patient."""
     return MedicationReminderService.get_patient_reminders(db, current_user.id)
-
-
-# ── Admin: Job Visibility ─────────────────────────────────────────────────────
 
 @phase2b_router.get("/admin/jobs", response_model=List[BackgroundJobOut])
 def admin_list_jobs(

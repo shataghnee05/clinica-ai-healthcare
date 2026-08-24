@@ -23,7 +23,6 @@ from app.ai.service import AIService
 
 logger = logging.getLogger(__name__)
 
-
 class JobManager:
     @staticmethod
     def enqueue_job(
@@ -51,7 +50,6 @@ class JobManager:
         if not job or job.status in (JobStatus.COMPLETED, JobStatus.PROCESSING):
             return False
 
-        # If job is scheduled in the future and not forced, keep PENDING and skip
         if not force and job.scheduled_at and job.scheduled_at > datetime.utcnow():
             return False
 
@@ -87,13 +85,12 @@ class JobManager:
             logger.error(f"Error executing background job {job.id} (attempt {job.attempts}): {exc}", exc_info=True)
             db.rollback()
 
-            # Refresh job handle for failure tracking
             job = db.query(BackgroundJob).filter(BackgroundJob.id == job_id).first()
             if job:
                 job.error_message = str(exc)
                 if job.attempts >= job.max_attempts:
                     job.status = JobStatus.FAILED
-                    # Mark dependent summary records as FAILED (AI jobs only)
+
                     if job.job_type == JobType.PRE_VISIT_SUMMARY:
                         appt_id = job.payload.get("appointment_id")
                         summary = db.query(PreVisitSummary).filter(PreVisitSummary.appointment_id == appt_id).first()
@@ -112,7 +109,7 @@ class JobManager:
                             reminder.error_message = str(exc)
                 else:
                     job.status = JobStatus.PENDING
-                    # Exponential backoff for retry timing
+
                     backoff_seconds = min(300, 2 ** job.attempts * 5)
                     job.scheduled_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
 
@@ -225,7 +222,6 @@ class JobManager:
         if not reminder:
             raise ValueError(f"Medication reminder record {reminder_id} not found")
 
-        # Respect cancelled appointments
         if (
             reminder.medication
             and reminder.medication.prescription
@@ -240,7 +236,6 @@ class JobManager:
             db.commit()
             return
 
-        # Respect medication end date
         if reminder.medication and reminder.medication.end_date:
             if reminder.scheduled_for.date() > reminder.medication.end_date:
                 logger.info("Skipping medication reminder %s past end date", reminder_id)
@@ -288,7 +283,6 @@ class JobManager:
             if JobManager.process_job(db, job.id):
                 processed += 1
         return processed
-
 
 def run_job_in_background(job_id: str):
     """FastAPI BackgroundTask worker wrapper"""

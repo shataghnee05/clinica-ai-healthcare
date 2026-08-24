@@ -35,13 +35,12 @@ from app.notification_service import NotificationService
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 client = TestClient(app)
 
-
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_phase2b_test_data():
     yield
     db = TestingSessionLocal()
     try:
-        # Purge test users created during phase2b tests
+
         db.query(Notification).filter(Notification.title.like("%Leave%")).delete(synchronize_session=False)
         test_users = db.query(User).filter(
             (User.email.like("admin_%@test.com")) |
@@ -64,7 +63,6 @@ def cleanup_phase2b_test_data():
         db.rollback()
     finally:
         db.close()
-
 
 @pytest.fixture(scope="module")
 def p2b_env():
@@ -108,7 +106,6 @@ def p2b_env():
     db.add_all([doc_profile, patient, patient2])
     db.commit()
 
-    # Create slots: Slot 1 (in leave range), Slot 2 (outside leave range), Slot 3 (for reschedule)
     t1 = datetime.utcnow() + timedelta(days=2, hours=10)
     t2 = datetime.utcnow() + timedelta(days=10, hours=10)
     t3 = datetime.utcnow() + timedelta(days=12, hours=10)
@@ -119,7 +116,6 @@ def p2b_env():
     db.add_all([s1, s2, s3])
     db.commit()
 
-    # Login tokens
     a_tok = client.post("/api/v1/auth/login", json={"email": admin.email, "password": test_password}).json()["access_token"]
     d_tok = client.post("/api/v1/auth/login", json={"email": doc_user.email, "password": test_password}).json()["access_token"]
     p_tok = client.post("/api/v1/auth/login", json={"email": patient.email, "password": test_password}).json()["access_token"]
@@ -140,13 +136,11 @@ def p2b_env():
     db.close()
     return db_data
 
-
 def test_doctor_leave_preview_and_confirm(p2b_env):
     """Admin previews leave and explicitly confirms: conflicting appointments cancelled, non-conflicting intact."""
     tok = p2b_env["pat_tok"]
     s1, s2 = p2b_env["slot1_id"], p2b_env["slot2_id"]
 
-    # Book Slot 1 (Day 2) and Slot 2 (Day 10)
     client.post(f"/api/v1/appointments/slots/{s1}/hold", headers={"Authorization": f"Bearer {tok}"})
     r1 = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {tok}"}, json={"slot_id": s1, "symptoms": "Chest pain"})
     assert r1.status_code == 201
@@ -162,7 +156,6 @@ def test_doctor_leave_preview_and_confirm(p2b_env):
     start_d = (datetime.utcnow() + timedelta(days=1)).date()
     end_d = (datetime.utcnow() + timedelta(days=4)).date()
 
-    # 1. Preview Leave
     prev_res = client.post(
         f"/api/v1/admin/doctors/{doc_id}/leaves/preview",
         headers={"Authorization": f"Bearer {admin_tok}"},
@@ -173,7 +166,6 @@ def test_doctor_leave_preview_and_confirm(p2b_env):
     assert preview["affected_count"] == 1
     assert preview["affected_appointments"][0]["appointment_id"] == appt1_id
 
-    # 2. Confirm Leave
     conf_res = client.post(
         f"/api/v1/admin/doctors/{doc_id}/leaves/confirm",
         headers={"Authorization": f"Bearer {admin_tok}"},
@@ -183,7 +175,6 @@ def test_doctor_leave_preview_and_confirm(p2b_env):
     leave_data = conf_res.json()
     assert leave_data["affected_appointments_count"] == 1
 
-    # 3. Verify: Conflicting appt1 cancelled, slot released; appt2 untouched
     db = TestingSessionLocal()
     a1 = db.query(Appointment).filter(Appointment.id == appt1_id).first()
     a2 = db.query(Appointment).filter(Appointment.id == appt2_id).first()
@@ -194,11 +185,9 @@ def test_doctor_leave_preview_and_confirm(p2b_env):
     assert slot1.status == SlotStatus.AVAILABLE
     assert a2.status == AppointmentStatus.CONFIRMED
 
-    # 4. Verify notification generated for patient
     notif = db.query(Notification).filter(Notification.user_id == p2b_env["pat_id"]).first()
     assert notif is not None
     db.close()
-
 
 def test_doctor_leave_application_approval_and_rejection(p2b_env):
     """Doctor applies for leave -> PENDING -> Admin approves -> APPROVED / Admin rejects with reason -> REJECTED."""
@@ -208,7 +197,6 @@ def test_doctor_leave_application_approval_and_rejection(p2b_env):
     start_d1 = (datetime.utcnow() + timedelta(days=20)).date()
     end_d1 = (datetime.utcnow() + timedelta(days=24)).date()
 
-    # 1. Doctor applies for leave
     apply_res = client.post(
         "/api/v1/doctor/leaves/apply",
         headers={"Authorization": f"Bearer {doc_tok}"},
@@ -218,11 +206,9 @@ def test_doctor_leave_application_approval_and_rejection(p2b_env):
     leave_id = apply_res.json()["id"]
     assert apply_res.json()["status"] == "PENDING"
 
-    # 2. Doctor views own leaves - shows PENDING
     my_leaves = client.get("/api/v1/doctor/leaves/my", headers={"Authorization": f"Bearer {doc_tok}"}).json()
     assert any(l["id"] == leave_id and l["status"] == "PENDING" for l in my_leaves)
 
-    # 3. Admin approves the leave
     approve_res = client.post(
         f"/api/v1/admin/leaves/{leave_id}/approve",
         headers={"Authorization": f"Bearer {admin_tok}"},
@@ -230,7 +216,6 @@ def test_doctor_leave_application_approval_and_rejection(p2b_env):
     assert approve_res.status_code == 200
     assert approve_res.json()["status"] == "APPROVED"
 
-    # 4. Doctor applies for another leave that admin will reject
     start_d2 = (datetime.utcnow() + timedelta(days=30)).date()
     end_d2 = (datetime.utcnow() + timedelta(days=35)).date()
 
@@ -242,7 +227,6 @@ def test_doctor_leave_application_approval_and_rejection(p2b_env):
     assert apply2_res.status_code == 201
     leave2_id = apply2_res.json()["id"]
 
-    # 5. Admin rejects with reason
     rejection_reason = "Staff shortage during surgical week. Please reschedule."
     reject_res = client.post(
         f"/api/v1/admin/leaves/{leave2_id}/reject",
@@ -253,12 +237,10 @@ def test_doctor_leave_application_approval_and_rejection(p2b_env):
     assert reject_res.json()["status"] == "REJECTED"
     assert reject_res.json()["rejection_reason"] == rejection_reason
 
-    # 6. Doctor views leaves - sees rejection note
     my_leaves2 = client.get("/api/v1/doctor/leaves/my", headers={"Authorization": f"Bearer {doc_tok}"}).json()
     rejected_leave = next(l for l in my_leaves2 if l["id"] == leave2_id)
     assert rejected_leave["status"] == "REJECTED"
     assert rejected_leave["rejection_reason"] == rejection_reason
-
 
 def test_appointment_cancellation_and_rescheduling(p2b_env):
     """Test cancellation with slot release and concurrency-safe rescheduling."""
@@ -275,12 +257,10 @@ def test_appointment_cancellation_and_rescheduling(p2b_env):
     s2, s3 = sa.id, sb.id
     db.close()
 
-    # Book slot 2
     client.post(f"/api/v1/appointments/slots/{s2}/hold", headers={"Authorization": f"Bearer {tok}"})
     r = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {tok}"}, json={"slot_id": s2, "symptoms": "Headache"})
     appt_id = r.json()["id"]
 
-    # Reschedule appt from s2 to s3
     resched_r = client.post(
         f"/api/v1/appointments/{appt_id}/reschedule",
         headers={"Authorization": f"Bearer {tok}"},
@@ -297,7 +277,6 @@ def test_appointment_cancellation_and_rescheduling(p2b_env):
     assert old_slot.status == SlotStatus.AVAILABLE
     assert new_slot.status == SlotStatus.BOOKED
 
-    # Cancel the rescheduled appointment
     cancel_r = client.patch(
         f"/api/v1/appointments/{appt_id}/cancel",
         headers={"Authorization": f"Bearer {tok}"},
@@ -307,7 +286,6 @@ def test_appointment_cancellation_and_rescheduling(p2b_env):
     db.refresh(new_slot)
     assert new_slot.status == SlotStatus.AVAILABLE
     db.close()
-
 
 def test_reschedule_conflict_handling(p2b_env):
     """Patient 2 cannot reschedule to a slot already held/booked by Patient 1."""
@@ -325,7 +303,6 @@ def test_reschedule_conflict_handling(p2b_env):
     s2, s3 = sc.id, sd.id
     db.close()
 
-    # Patient 1 books s2, Patient 2 books s3
     client.post(f"/api/v1/appointments/slots/{s2}/hold", headers={"Authorization": f"Bearer {p1_tok}"})
     r1 = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p1_tok}"}, json={"slot_id": s2, "symptoms": "Cough"})
     appt1_id = r1.json()["id"]
@@ -333,7 +310,6 @@ def test_reschedule_conflict_handling(p2b_env):
     client.post(f"/api/v1/appointments/slots/{s3}/hold", headers={"Authorization": f"Bearer {p2_tok}"})
     client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p2_tok}"}, json={"slot_id": s3, "symptoms": "Fever"})
 
-    # Patient 1 tries to reschedule to s3 (already booked by Patient 2) -> 409 Conflict
     conflict_r = client.post(
         f"/api/v1/appointments/{appt1_id}/reschedule",
         headers={"Authorization": f"Bearer {p1_tok}"},
@@ -341,14 +317,12 @@ def test_reschedule_conflict_handling(p2b_env):
     )
     assert conflict_r.status_code == 409
 
-
 def test_medication_reminders_and_job_reliability(p2b_env):
     """Prescription generates scheduled medication reminders; background jobs retry on failure."""
     p_tok = p2b_env["pat_tok"]
     d_tok = p2b_env["doc_tok"]
     doc_id = p2b_env["doc_id"]
 
-    # Create fresh slot for consultation
     db = TestingSessionLocal()
     t_med = datetime.utcnow() + timedelta(days=20, hours=10)
     slot_med = Slot(doctor_id=doc_id, start_time=t_med, end_time=t_med + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
@@ -360,7 +334,6 @@ def test_medication_reminders_and_job_reliability(p2b_env):
     client.post(f"/api/v1/appointments/slots/{s_id}/hold", headers={"Authorization": f"Bearer {p_tok}"})
     appt = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p_tok}"}, json={"slot_id": s_id, "symptoms": "Hypertension"}).json()
 
-    # Complete consultation with medication
     cons = client.post(f"/api/v1/consultations/{appt['id']}/start", headers={"Authorization": f"Bearer {d_tok}"}).json()
     comp = client.post(
         f"/api/v1/consultations/{cons['id']}/complete",
@@ -376,13 +349,11 @@ def test_medication_reminders_and_job_reliability(p2b_env):
     )
     assert comp.status_code == 200
 
-    # Verify MedicationReminders generated
     rem_res = client.get("/api/v1/medication-reminders/my", headers={"Authorization": f"Bearer {p_tok}"})
     assert rem_res.status_code == 200
     rems = rem_res.json()
-    assert len(rems) == 5  # 5 days x 1 dose/day
+    assert len(rems) == 5
 
-    # Verify background job retry & FAILED transition
     db = TestingSessionLocal()
     bad_job = JobManager.enqueue_job(db, JobType.MEDICATION_REMINDER, {"reminder_id": "non-existent"})
     assert JobManager.process_job(db, bad_job.id) is False
@@ -397,7 +368,6 @@ def test_medication_reminders_and_job_reliability(p2b_env):
     assert bad_job.status == JobStatus.FAILED
     db.close()
 
-
 def test_notification_delivery_and_read_state(p2b_env):
     """Notifications are queryable and can be marked as read."""
     p_tok = p2b_env["pat_tok"]
@@ -411,13 +381,11 @@ def test_notification_delivery_and_read_state(p2b_env):
         assert mark_res.status_code == 200
         assert mark_res.json()["is_read"] is True
 
-
 def test_email_failure_does_not_affect_appointment_state(p2b_env):
     """External notification failure must NOT alter appointment CONFIRMED state."""
     p_tok = p2b_env["pat_tok"]
     doc_id = p2b_env["doc_id"]
 
-    # Create fresh slot
     db = TestingSessionLocal()
     t_email = datetime.utcnow() + timedelta(days=22, hours=10)
     slot_email = Slot(doctor_id=doc_id, start_time=t_email, end_time=t_email + timedelta(minutes=30), status=SlotStatus.AVAILABLE)
@@ -429,24 +397,20 @@ def test_email_failure_does_not_affect_appointment_state(p2b_env):
     client.post(f"/api/v1/appointments/slots/{s_email_id}/hold", headers={"Authorization": f"Bearer {p_tok}"})
     appt = client.post("/api/v1/appointments/confirm", headers={"Authorization": f"Bearer {p_tok}"}, json={"slot_id": s_email_id, "symptoms": "Sore throat"}).json()
 
-    # Appointment must remain confirmed even if notification sender fails
     db = TestingSessionLocal()
     db_appt = db.query(Appointment).filter(Appointment.id == appt["id"]).first()
     assert db_appt.status == AppointmentStatus.CONFIRMED
 
-    # Execute notification helper with invalid target -> failure handled gracefully
     NotificationService.execute_notification_job(db, "fake-id", "invalid@", "Subject", "Body")
     db.refresh(db_appt)
     assert db_appt.status == AppointmentStatus.CONFIRMED
     db.close()
-
 
 def test_rbac_authorization(p2b_env):
     """Unauthorized roles cannot access admin doctor leaves or other patient's reschedule."""
     p_tok = p2b_env["pat_tok"]
     doc_id = p2b_env["doc_id"]
 
-    # Patient cannot create doctor leave
     res = client.post(
         f"/api/v1/admin/doctors/{doc_id}/leaves/preview",
         headers={"Authorization": f"Bearer {p_tok}"},

@@ -12,7 +12,6 @@ from app.routes import api_router
 from app.routes_phase2b import phase2b_router
 from app.models import engine, Base, run_schema_migrations
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log_event("APP_STARTUP", {"version": settings.VERSION, "project": settings.PROJECT_NAME})
@@ -23,7 +22,6 @@ async def lifespan(app: FastAPI):
         log_event("DB_INIT_WARNING", {"error": str(e)})
     yield
     log_event("APP_SHUTDOWN", {})
-
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -43,23 +41,19 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(phase2b_router, prefix=settings.API_V1_STR)
 
-# Determine static directories
 backend_dir = Path(__file__).resolve().parent.parent
 static_dir = backend_dir / "static"
 assets_dir = static_dir / "assets"
 
-# 1. Mount /assets directory so Vite JS/CSS bundles are served with correct MIME types
 if assets_dir.is_dir():
     app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
-# 2. Mount /static for any explicit static references
 if static_dir.is_dir():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    # Do not intercept API or documentation routes
+
     if (
         full_path.startswith("api")
         or full_path.startswith("docs")
@@ -68,12 +62,10 @@ async def serve_spa(full_path: str):
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
-    # Serve physical file if it exists directly in static_dir (e.g. favicon.svg, icons.svg)
     requested_file = static_dir / full_path
     if requested_file.is_file():
         return FileResponse(str(requested_file))
 
-    # SPA Fallback: serve index.html for all client-side navigation routes
     index_file = static_dir / "index.html"
     if index_file.is_file():
         return FileResponse(str(index_file))

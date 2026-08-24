@@ -1,7 +1,6 @@
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
-
 class PreVisitSummaryResult(BaseModel):
     urgency: Literal["LOW", "MEDIUM", "HIGH"] = Field(
         description="Assessed triage urgency based on reported symptoms"
@@ -34,13 +33,11 @@ class PreVisitSummaryResult(BaseModel):
                     cleaned.append(d)
         return cleaned[:3]
 
-
 class MedicationScheduleItem(BaseModel):
     medication_name: str
     dosage: str
     timing: str = Field(description="e.g. Morning after breakfast, Bedtime")
     instructions: Optional[str] = ""
-
 
 class PostVisitSummaryResult(BaseModel):
     visit_explanation: str = Field(

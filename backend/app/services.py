@@ -52,7 +52,6 @@ from app.security import get_password_hash, verify_password
 from app.config import settings
 from app.logger import log_event
 
-
 class AuthService:
     @staticmethod
     def register_user(db: Session, data: UserRegister) -> User:
@@ -109,7 +108,7 @@ class AuthService:
         else:
             user = db.query(User).filter(User.email == google_email).first()
             if not user:
-                # Create user with a secure random hash
+
                 random_pw = secrets.token_urlsafe(32)
                 user = User(
                     email=google_email,
@@ -121,7 +120,6 @@ class AuthService:
                 db.add(user)
                 db.flush()
 
-                # If registering as doctor, create DoctorProfile
                 if user.role == UserRole.DOCTOR:
                     profile = DoctorProfile(
                         user_id=user.id,
@@ -136,7 +134,6 @@ class AuthService:
                 db.refresh(user)
                 log_event("USER_REGISTERED_GOOGLE", {"user_id": user.id, "email": user.email, "role": user.role.value})
 
-        # Save Google Account tokens
         GoogleCalendarService.save_user_google_account(db, user.id, token_data)
         log_event("USER_GOOGLE_AUTH_SUCCESS", {"user_id": user.id, "email": user.email})
         return user, token_data
@@ -151,17 +148,14 @@ class AuthService:
                 detail="No account found with this email address. Please verify your email or register."
             )
 
-        # Generate a secure 6-digit numeric OTP
         otp_code = f"{random.randint(100000, 999999)}"
         expires_at = datetime.utcnow() + timedelta(minutes=10)
 
-        # Invalidate any existing unused OTPs for this email
         db.query(PasswordResetOTP).filter(
             PasswordResetOTP.email == clean_email,
             PasswordResetOTP.is_used == False
         ).update({"is_used": True})
 
-        # Create new OTP record
         otp_record = PasswordResetOTP(
             email=clean_email,
             otp_code=otp_code,
@@ -171,7 +165,6 @@ class AuthService:
         db.add(otp_record)
         db.commit()
 
-        # Send email via Email Provider (Resend, SMTP, or Mock)
         subject, plain_text, html_body = template_password_reset_otp(
             user_name=user.full_name,
             otp_code=otp_code,
@@ -226,7 +219,6 @@ class AuthService:
                 detail="User not found."
             )
 
-        # Validate OTP
         record = db.query(PasswordResetOTP).filter(
             PasswordResetOTP.email == clean_email,
             PasswordResetOTP.otp_code == clean_otp,
@@ -246,7 +238,6 @@ class AuthService:
                 detail="Password must be at least 6 characters long.",
             )
 
-        # Mark OTP as used
         record.is_used = True
         user.password_hash = get_password_hash(new_password)
         db.commit()
@@ -254,7 +245,6 @@ class AuthService:
 
         log_event("PASSWORD_RESET_SUCCESS", {"user_id": user.id, "email": user.email})
         return user
-
 
 class DoctorService:
     @staticmethod
@@ -354,7 +344,7 @@ class DoctorService:
         query = db.query(DoctorProfile).join(User, DoctorProfile.user_id == User.id)
         if not include_inactive:
             query = query.filter(DoctorProfile.is_active == True)
-        
+
         if specialization:
             query = query.filter(DoctorProfile.specialization.ilike(f"%{specialization.strip()}%"))
         if search:
@@ -409,7 +399,7 @@ class DoctorService:
         profile = db.query(DoctorProfile).filter(DoctorProfile.id == doctor_id).first()
         if not profile:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doctor not found")
-        
+
         for item in data.hours:
             st_parts = [int(x) for x in item.start_time.split(":")]
             et_parts = [int(x) for x in item.end_time.split(":")]
@@ -645,7 +635,6 @@ class AppointmentService:
             db.add(appointment)
             db.flush()
 
-            # Create PreVisitSummary with initial PENDING status
             pre_summary = PreVisitSummary(
                 id=str(uuid.uuid4()),
                 appointment_id=appointment.id,
@@ -666,21 +655,18 @@ class AppointmentService:
                 "symptoms_length": len(clean_symptoms),
             })
 
-            # Enqueue Pre-Visit Summary Background Job
             try:
                 job = JobManager.enqueue_job(db, JobType.PRE_VISIT_SUMMARY, {"appointment_id": appointment.id})
                 appointment._enqueued_job_id = job.id
             except Exception as e:
                 log_event("AI_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
 
-            # Enqueue Confirmation Notification Email Job (failure-tolerant)
             try:
                 from app.notification_service import NotificationService
                 NotificationService.notify_appointment_confirmation(db, appointment)
             except Exception as e:
                 log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
 
-            # Enqueue Google Calendar Sync Background Job (failure-tolerant)
             try:
                 cal_job = JobManager.enqueue_job(
                     db,
@@ -691,7 +677,6 @@ class AppointmentService:
             except Exception as e:
                 log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(e)})
 
-            # Automatically schedule Appointment Reminder Job (failure-tolerant)
             try:
                 from app.notification_service import NotificationService
                 NotificationService.schedule_appointment_reminder(db, appointment)
@@ -743,14 +728,12 @@ class AppointmentService:
         db.refresh(appointment)
         log_event("APPOINTMENT_CANCELLED", {"appointment_id": appointment.id, "cancelled_by": user.id, "reason": reason})
 
-        # Enqueue cancellation notification (failure-tolerant — outside main transaction)
         try:
             from app.notification_service import NotificationService
             NotificationService.notify_appointment_cancellation(db, appointment, reason, cancelled_by_leave)
         except Exception as exc:
             log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
-        # Enqueue Google Calendar deletion job (failure-tolerant)
         try:
             cal_job = JobManager.enqueue_job(
                 db,
@@ -765,7 +748,6 @@ class AppointmentService:
         except Exception as exc:
             log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
-        # Cancel pending appointment reminder jobs (failure-tolerant)
         try:
             from app.notification_service import NotificationService
             NotificationService.cancel_appointment_reminder(db, appointment.id)
@@ -809,10 +791,8 @@ class AppointmentService:
         old_slot = appointment.slot
         target_patient_id = appointment.patient_id
 
-        # 1. Hold new slot on behalf of the patient (concurrency-safe optimistic lock)
         new_slot = AppointmentService.hold_slot(db, new_slot_id, target_patient_id)
 
-        # 2. Atomically book new slot
         now = datetime.utcnow()
         rows_updated = db.query(Slot).filter(
             Slot.id == new_slot_id,
@@ -831,14 +811,12 @@ class AppointmentService:
                 detail="Could not book new slot — concurrent conflict detected",
             )
 
-        # 3. Release old slot if not already available
         old_slot_id = old_slot.id if old_slot else None
         if old_slot and old_slot.status != SlotStatus.AVAILABLE:
             old_slot.status = SlotStatus.AVAILABLE
             old_slot.held_by_patient_id = None
             old_slot.hold_expires_at = None
 
-        # 4. Update appointment to CONFIRMED on the new slot
         new_slot_obj = db.query(Slot).filter(Slot.id == new_slot_id).first()
         appointment.rescheduled_from_slot_id = old_slot_id
         appointment.slot_id = new_slot_id
@@ -856,14 +834,12 @@ class AppointmentService:
             "rescheduled_by": current_user.role.value,
         })
 
-        # 5. Enqueue notifications (failure-tolerant)
         try:
             from app.notification_service import NotificationService
             NotificationService.notify_appointment_confirmation(db, appointment)
         except Exception as exc:
             log_event("NOTIFICATION_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
-        # 6. Enqueue Google Calendar update job (failure-tolerant)
         try:
             cal_job = JobManager.enqueue_job(
                 db,
@@ -874,7 +850,6 @@ class AppointmentService:
         except Exception as exc:
             log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
-        # 7. Reschedule reminder: cancel old reminder and schedule reminder for new slot time
         try:
             from app.notification_service import NotificationService
             NotificationService.cancel_appointment_reminder(db, appointment.id)
@@ -987,11 +962,6 @@ class AdminService:
         db.commit()
         log_event("DOCTOR_DELETED", {"doctor_id": doctor_id})
         return True
-
-
-# ── Phase 2B: Doctor Leave Service ───────────────────────────────────────────
-
-# ── Phase 2B: Doctor Leave Service ───────────────────────────────────────────
 
 class DoctorLeaveService:
     @staticmethod
@@ -1156,7 +1126,6 @@ class DoctorLeaveService:
             "cancelled_count": cancelled_count,
         })
 
-        # Notify patients whose appointments were cancelled
         db.refresh(leave)
         for appointment in conflicting:
             try:
@@ -1178,7 +1147,6 @@ class DoctorLeaveService:
             except Exception as exc:
                 log_event("CALENDAR_JOB_ENQUEUE_WARNING", {"appointment_id": appointment.id, "error": str(exc)})
 
-        # Notify the Doctor that leave was approved
         try:
             from app.notification_service import NotificationService
             NotificationService.notify_doctor_leave_approval(db, leave)
@@ -1221,7 +1189,6 @@ class DoctorLeaveService:
             "reason": rejection_reason,
         })
 
-        # Notify doctor with the rejection reason
         db.refresh(leave)
         try:
             from app.notification_service import NotificationService
@@ -1351,9 +1318,6 @@ class DoctorLeaveService:
         log_event("DOCTOR_LEAVE_DELETED", {"leave_id": leave_id, "user_id": user.id})
         return True
 
-
-# ── Phase 2B: Medication Reminder Service ────────────────────────────────────
-
 _FREQUENCY_MAP = {
     "once daily": 1,
     "once a day": 1,
@@ -1418,17 +1382,17 @@ def _parse_frequency(frequency_str: str) -> int:
     for key, val in _FREQUENCY_MAP.items():
         if key in f:
             return val
-    # Check for interval pattern like "every X hours" or "every X hrs" or "every X h"
+
     m_int = re.search(r"every\s*(\d+)\s*(?:hour|hr|h)", f)
     if m_int:
         hrs = int(m_int.group(1))
         if hrs > 0:
             return max(1, min(24 // hrs, 4))
-    # Fallback: look for digit
+
     m = re.search(r"(\d+)", f)
     if m:
         return min(int(m.group(1)), 4)
-    return 1  # default once daily
+    return 1
 
 def _parse_duration_days(duration_str: str) -> int:
     """Return number of days from duration string like '7 days', '2 weeks'."""
@@ -1442,8 +1406,7 @@ def _parse_duration_days(duration_str: str) -> int:
         elif unit == "month":
             return n * 30
         return n
-    return 7  # default 7 days
-
+    return 7
 
 class MedicationReminderService:
     @staticmethod
@@ -1471,7 +1434,7 @@ class MedicationReminderService:
         for med in prescription.medications:
             doses_per_day = _parse_frequency(med.frequency)
             if doses_per_day == 0:
-                # "As needed" — generate a single reminder at start
+
                 doses_per_day = 1
                 duration_days = 1
             else:
@@ -1492,7 +1455,6 @@ class MedicationReminderService:
                     h, m_min = map(int, dose_time_str.split(":"))
                     scheduled_for = datetime.combine(reminder_date, time(h, m_min))
 
-                    # Guard against duplicate MedicationReminder
                     existing = db.query(MedicationReminder).filter(
                         MedicationReminder.medication_id == med.id,
                         MedicationReminder.patient_id == patient.id,
@@ -1514,7 +1476,6 @@ class MedicationReminderService:
 
         db.flush()
 
-        # Enqueue notification jobs for each reminder
         try:
             from app.notification_service import NotificationService
             NotificationService.enqueue_medication_reminders(db, created_reminders, patient)
@@ -1542,9 +1503,6 @@ class MedicationReminderService:
             .all()
         )
 
-
-# ── Phase 2B: Notification Query Service ─────────────────────────────────────
-
 class NotificationQueryService:
     @staticmethod
     def get_user_notifications(db: Session, user_id: str) -> List[Notification]:
@@ -1567,9 +1525,6 @@ class NotificationQueryService:
         db.commit()
         db.refresh(notif)
         return notif
-
-
-# ── ConsultationService (Phase 2A, extended for Phase 2B) ────────────────────
 
 class ConsultationService:
     @staticmethod
@@ -1727,7 +1682,6 @@ class ConsultationService:
             )
             db.add(med_item)
 
-        # Create PostVisitSummary with initial PENDING status
         post_summary = db.query(PostVisitSummary).filter(PostVisitSummary.consultation_id == consultation_id).first()
         if not post_summary:
             post_summary = PostVisitSummary(
@@ -1745,14 +1699,12 @@ class ConsultationService:
         db.commit()
         db.refresh(consultation)
 
-        # Enqueue Post-Visit Summary Background Job
         try:
             job = JobManager.enqueue_job(db, JobType.POST_VISIT_SUMMARY, {"consultation_id": consultation.id})
             consultation._enqueued_job_id = job.id
         except Exception as e:
             log_event("AI_JOB_ENQUEUE_WARNING", {"consultation_id": consultation.id, "error": str(e)})
 
-        # Phase 2B: Generate medication reminders from prescription
         try:
             db.refresh(prescription)
             MedicationReminderService.generate_reminders_for_prescription(db, prescription, consultation)
@@ -1780,7 +1732,6 @@ class ConsultationService:
         if not (is_doctor or is_patient or is_admin):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this consultation")
 
-        # Patients cannot view private clinical_notes
         clinical_notes_val = consultation.clinical_notes if (is_doctor or is_admin) else None
 
         rx_data = None

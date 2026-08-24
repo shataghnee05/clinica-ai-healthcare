@@ -166,7 +166,7 @@ class AppointmentOut(BaseModel):
     patient_email: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    # Phase 2B additions
+
     cancellation_reason: Optional[str] = None
     rescheduled_from_slot_id: Optional[str] = None
     google_event_id: Optional[str] = None
@@ -272,9 +272,6 @@ class GeneratePreVisitSummaryRequest(BaseModel):
 
 Token.model_rebuild()
 
-
-# ── Phase 2B Schemas ─────────────────────────────────────────────────────────
-
 from datetime import date
 from app.models import NotificationType, MedicationReminderStatus, LeaveStatus
 
@@ -370,18 +367,13 @@ class BackgroundJobOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-
-# ── Google OAuth & Calendar Schemas ──────────────────────────────────────────
-
 class GoogleAuthUrlOut(BaseModel):
     auth_url: str
-
 
 class GoogleCallbackRequest(BaseModel):
     code: str
     state: Optional[str] = None
     role: Optional[UserRole] = UserRole.PATIENT
-
 
 class GoogleCalendarStatusOut(BaseModel):
     connected: bool

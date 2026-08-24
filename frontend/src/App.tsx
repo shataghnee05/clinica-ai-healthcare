@@ -59,8 +59,7 @@ export default function App() {
   });
 
   const [currentUser, setCurrentUser] = useState<User | null>(getStoredUser());
-  
-  // Auth Portal States (for unauthenticated entrance)
+
   const [selectedPortalRole, setSelectedPortalRole] = useState<"PATIENT" | "DOCTOR" | "ADMIN">("PATIENT");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authEmail, setAuthEmail] = useState("");
@@ -71,7 +70,6 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Forgot Password / OTP States
   const [forgotPasswordModalOpen, setForgotPasswordModalOpen] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordOtp, setForgotPasswordOtp] = useState("");
@@ -86,19 +84,13 @@ export default function App() {
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState("");
   const [forgotCountdown, setForgotCountdown] = useState(0);
 
-  // Active Tabs for authenticated roles
-  // Patient: 'find-doctors' | 'my-appointments' | 'medications'
-  // Doctor: 'doctor-agenda' | 'doctor-leaves'
-  // Admin: 'admin-stats' | 'admin-doctors' | 'admin-leaves' | 'admin-patients' | 'admin-jobs'
   const [patientTab, setPatientTab] = useState<"find-doctors" | "my-appointments" | "medications">("find-doctors");
   const [doctorTab, setDoctorTab] = useState<"doctor-agenda" | "doctor-leaves">("doctor-agenda");
   const [adminTab, setAdminTab] = useState<"admin-stats" | "admin-doctors" | "admin-leaves" | "admin-patients" | "admin-jobs">("admin-stats");
 
-  // Google Calendar Integration State
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState<GoogleCalendarStatus | null>(null);
   const [googleConnecting, setGoogleConnecting] = useState(false);
 
-  // Patient Booking States
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSpecialization, setSelectedSpecialization] = useState<string>("");
@@ -123,11 +115,9 @@ export default function App() {
   const [patientAppointments, setPatientAppointments] = useState<Appointment[]>([]);
   const [patientAppointmentsLoading, setPatientAppointmentsLoading] = useState(false);
 
-  // Doctor Agenda States
   const [doctorAgenda, setDoctorAgenda] = useState<Appointment[]>([]);
   const [doctorAgendaLoading, setDoctorAgendaLoading] = useState(false);
 
-  // Doctor Leave States (Self-Service)
   const [docLeaveStartDate, setDocLeaveStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 2);
@@ -145,14 +135,12 @@ export default function App() {
   const [docLeavesList, setDocLeavesList] = useState<DoctorLeave[]>([]);
   const [docLeavesLoading, setDocLeavesLoading] = useState(false);
 
-  // Admin States
   const [adminStats, setAdminStats] = useState<SystemStats | null>(null);
   const [adminDoctorsList, setAdminDoctorsList] = useState<Doctor[]>([]);
 
   const [adminPatientsList, setAdminPatientsList] = useState<PatientAdmin[]>([]);
   const [adminPatientsLoading, setAdminPatientsLoading] = useState(false);
 
-  // Admin Leave Oversight States
   const [adminLeaveDoctorId, setAdminLeaveDoctorId] = useState("");
   const [adminLeaveStatusFilter, setAdminLeaveStatusFilter] = useState<string>("ALL");
   const [adminDoctorLeavesList, setAdminDoctorLeavesList] = useState<DoctorLeave[]>([]);
@@ -162,7 +150,6 @@ export default function App() {
   const [adminRejectSubmitting, setAdminRejectSubmitting] = useState(false);
   const [adminApproveSubmitting, setAdminApproveSubmitting] = useState<string | null>(null);
 
-  // Admin Doctor Registration Modal States
   const [adminRegisterDoctorModalOpen, setAdminRegisterDoctorModalOpen] = useState(false);
   const [adminNewDocName, setAdminNewDocName] = useState("");
   const [adminNewDocEmail, setAdminNewDocEmail] = useState("");
@@ -175,11 +162,9 @@ export default function App() {
   const [adminNewDocAutoSlots, setAdminNewDocAutoSlots] = useState(true);
   const [adminNewDocSubmitting, setAdminNewDocSubmitting] = useState(false);
 
-  // Admin Job Monitor
   const [adminJobsList, setAdminJobsList] = useState<any[]>([]);
   const [adminJobsLoading, setAdminJobsLoading] = useState(false);
 
-  // Phase 2A: Consultation & AI States
   const [consultationModalAppt, setConsultationModalAppt] = useState<Appointment | null>(null);
   const [activeConsultation, setActiveConsultation] = useState<Consultation | null>(null);
   const [activePreVisitSummary, setActivePreVisitSummary] = useState<PreVisitSummary | null>(null);
@@ -193,18 +178,15 @@ export default function App() {
   const [consultationSubmitting, setConsultationSubmitting] = useState(false);
   const [isGeneratingAiSummary, setIsGeneratingAiSummary] = useState(false);
 
-  // Notifications & Reminders
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifModal, setShowNotifModal] = useState(false);
   const [medicationReminders, setMedicationReminders] = useState<MedicationReminder[]>([]);
   const [remindersLoading, setRemindersLoading] = useState(false);
 
-  // Cancellation Modal
   const [cancellingAppt, setCancellingAppt] = useState<Appointment | null>(null);
   const [cancelReasonInput, setCancelReasonInput] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
 
-  // Reschedule Modal
   const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState<string>(() => {
     const d = new Date();
@@ -218,7 +200,6 @@ export default function App() {
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
 
-  // Theme effect
   useEffect(() => {
     localStorage.setItem("theme", theme);
     if (theme === "dark") {
@@ -232,7 +213,6 @@ export default function App() {
     setTheme((prev) => (prev === "light" ? "dark" : "light"));
   };
 
-  // Check stored user on load
   useEffect(() => {
     if (getToken()) {
       api.auth.getMe()
@@ -247,19 +227,16 @@ export default function App() {
     }
   }, []);
 
-  // Doctor list loading (for Patient search & Admin)
   useEffect(() => {
     loadDoctors();
   }, [selectedSpecialization]);
 
-  // Load slots when doctor and date change
   useEffect(() => {
     if (selectedDoctor) {
       loadSlots(selectedDoctor.id, selectedDate);
     }
   }, [selectedDoctor, selectedDate]);
 
-  // Role-based data loading
   useEffect(() => {
     if (!currentUser) return;
 
@@ -280,7 +257,6 @@ export default function App() {
     }
   }, [currentUser, patientTab, doctorTab, adminTab, adminLeaveDoctorId, adminLeaveStatusFilter]);
 
-  // Cooldown timer for Forgot Password OTP resend
   useEffect(() => {
     let timer: any;
     if (forgotCountdown > 0) {
@@ -291,7 +267,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [forgotCountdown]);
 
-  // Notifications poll & Google Calendar status
   useEffect(() => {
     if (currentUser) {
       loadNotifications();
@@ -301,7 +276,6 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Handle Google OAuth callback on mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get("code");
@@ -329,7 +303,6 @@ export default function App() {
     }
   }, []);
 
-  // 5-minute atomic slot hold countdown timer
   useEffect(() => {
     if (!heldSlot) return;
     const timer = setInterval(() => {
@@ -347,7 +320,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [heldSlot, selectedDoctor, selectedDate]);
 
-  // Reschedule hold timer
   useEffect(() => {
     if (!rescheduleHeldSlot) return;
     const timer = setInterval(() => {
@@ -365,7 +337,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [rescheduleHeldSlot, reschedulingAppt, rescheduleDate]);
 
-  // Fetch functions
   const loadDoctors = async () => {
     setDoctorsLoading(true);
     try {
@@ -484,7 +455,6 @@ export default function App() {
       const jobs = await api.admin.listJobs(25);
       setAdminJobsList(jobs);
     } catch {
-      // Background poll silently fails
     } finally {
       setAdminJobsLoading(false);
     }
@@ -496,7 +466,6 @@ export default function App() {
       const notifs = await api.notifications.getMy();
       setNotifications(notifs);
     } catch {
-      // Ignore background errors
     }
   };
 
@@ -518,7 +487,6 @@ export default function App() {
       const s = await api.auth.getGoogleCalendarStatus();
       setGoogleCalendarStatus(s);
     } catch {
-      // Ignore
     }
   };
 
@@ -544,7 +512,6 @@ export default function App() {
     }
   };
 
-  // Auth Handler
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
@@ -581,7 +548,6 @@ export default function App() {
     }
   };
 
-  // Forgot Password & OTP Reset Handlers
   const handleRequestForgotPasswordOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotPasswordEmail.trim()) {
@@ -666,7 +632,6 @@ export default function App() {
     setAuthPassword("");
   };
 
-  // Slot Hold & Booking Handlers
   const handleHoldSlot = async (slot: Slot) => {
     if (!currentUser) return;
     if (currentUser.role !== "PATIENT") {
@@ -707,7 +672,6 @@ export default function App() {
     }
   };
 
-  // Doctor Leave Self-Service Handlers
   const handleDoctorPreviewLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     setDocLeavePreviewLoading(true);
@@ -749,7 +713,6 @@ export default function App() {
     }
   };
 
-  // Admin Leave Oversight Handlers
   const handleAdminApproveLeave = async (leave: DoctorLeave) => {
     if (!confirm(`Approve leave for ${leave.doctor_name || "Doctor"} from ${leave.start_date} to ${leave.end_date}? Any conflicting patient appointments (${leave.affected_appointments_count}) will be cancelled and patients notified.`)) {
       return;
@@ -791,7 +754,6 @@ export default function App() {
     }
   };
 
-  // Admin Patient Management Handler
   const handleAdminDeletePatient = async (patient: PatientAdmin) => {
     if (!confirm(`Are you sure you want to delete patient "${patient.full_name}"? All associated appointments will also be removed. This action cannot be undone.`)) {
       return;
@@ -805,7 +767,6 @@ export default function App() {
     }
   };
 
-  // Admin Doctor Registration Handler
   const handleAdminRegisterDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminNewDocSubmitting(true);
@@ -860,7 +821,6 @@ export default function App() {
     loadRescheduleSlots(appt.doctor_id, dStr);
   };
 
-  // Doctor Consultation & SOAP Notes Handlers
   const handleOpenConsultation = async (appt: Appointment) => {
     setConsultationModalAppt(appt);
     setErrorMessage("");
@@ -953,7 +913,6 @@ export default function App() {
     }
   };
 
-  // Appointment Cancellation & Rescheduling Handlers
   const handleConfirmCancel = async () => {
     if (!cancellingAppt) return;
     setCancelLoading(true);
@@ -1029,11 +988,9 @@ export default function App() {
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
     } catch {
-      // Ignore
     }
   };
 
-  // Helper formatting functions
   const formatTime = (isoString?: string) => {
     if (!isoString) return "";
     const date = new Date(isoString);
@@ -1054,13 +1011,9 @@ export default function App() {
 
   const unreadNotifsCount = notifications.filter((n) => !n.is_read).length;
 
-  // =========================================================================
-  // VIEW 1: UNAUTHENTICATED ROLE-BASED LOGIN / REGISTER PORTAL
-  // =========================================================================
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between transition-colors duration-200">
-        {/* Top Minimal Header */}
         <header className="border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-10 px-6 py-4">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -1085,10 +1038,8 @@ export default function App() {
           </div>
         </header>
 
-        {/* Main Portal Selection & Login Container */}
         <main className="flex-1 flex items-center justify-center p-6 my-6">
           <div className="w-full max-w-xl">
-            {/* Role Tab Selector */}
             <div className="bg-slate-200/80 dark:bg-slate-900 p-1.5 rounded-2xl flex space-x-1.5 mb-6 shadow-inner border border-slate-200 dark:border-slate-800">
               <button
                 type="button"
@@ -1142,9 +1093,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* Main Login Card */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-xl">
-              {/* Role Header Banner */}
               <div className="text-center mb-8">
                 {selectedPortalRole === "PATIENT" && (
                   <>
@@ -1187,7 +1136,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Error Message Alert */}
               {authError && (
                 <div className="mb-6 p-4 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 text-sm flex items-start space-x-3">
                   <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -1195,7 +1143,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Login / Register Form */}
               <form onSubmit={handleAuthSubmit} className="space-y-4">
                 {selectedPortalRole === "PATIENT" && authMode === "register" && (
                   <>
@@ -1312,7 +1259,6 @@ export default function App() {
                   )}
                 </button>
 
-                {/* Google OAuth Button */}
                 <div className="relative my-4">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-slate-200 dark:border-slate-800" />
@@ -1354,7 +1300,6 @@ export default function App() {
                 </button>
               </form>
 
-              {/* Patient Toggle: Sign in vs Register */}
               {selectedPortalRole === "PATIENT" && (
                 <div className="text-center mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
                   {authMode === "login" ? (
@@ -1399,12 +1344,8 @@ export default function App() {
     );
   }
 
-  // =========================================================================
-  // VIEW 2: AUTHENTICATED APP SHELL (PATIENT / DOCTOR / ADMIN)
-  // =========================================================================
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200">
-      {/* Top Navbar */}
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur sticky top-0 z-30 px-6 py-3.5 shadow-sm">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-6">
@@ -1420,7 +1361,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Navigation Tabs based on Role */}
             <nav className="hidden md:flex items-center space-x-1 pl-4 border-l border-slate-200 dark:border-slate-800">
               {currentUser.role === "PATIENT" && (
                 <>
@@ -1547,9 +1487,7 @@ export default function App() {
             </nav>
           </div>
 
-          {/* Right Header Actions */}
           <div className="flex items-center space-x-3">
-            {/* Notification Bell */}
             <button
               onClick={() => setShowNotifModal(true)}
               className="relative p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition"
@@ -1563,8 +1501,6 @@ export default function App() {
               )}
             </button>
 
-            {/* Theme Toggle */}
-            {/* Google Calendar Connect / Status Badge */}
             {currentUser && currentUser.role !== "ADMIN" && (
               googleCalendarStatus?.connected ? (
                 <div className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300">
@@ -1598,7 +1534,6 @@ export default function App() {
               {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5 text-amber-400" />}
             </button>
 
-            {/* User Profile Badge */}
             <div className="hidden sm:flex items-center space-x-2.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-xs">
               <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center font-bold">
                 {currentUser.full_name.charAt(0).toUpperCase()}
@@ -1613,7 +1548,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Logout Button */}
             <button
               onClick={handleLogout}
               className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-sm font-semibold transition"
@@ -1626,7 +1560,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Global Error Banner */}
       {errorMessage && (
         <div className="bg-rose-500 text-white px-6 py-3 text-sm font-medium flex items-center justify-between shadow-md">
           <div className="flex items-center space-x-2">
@@ -1639,18 +1572,12 @@ export default function App() {
         </div>
       )}
 
-      {/* Dynamic Content Per Role */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
 
-        {/* =================================================================== */}
-        {/* ROLE A: PATIENT VIEW                                                */}
-        {/* =================================================================== */}
         {currentUser.role === "PATIENT" && (
           <>
-            {/* SUB-VIEW 1: FIND DOCTORS */}
             {patientTab === "find-doctors" && (
               <div className="space-y-6">
-                {/* Search & Filter Bar */}
                 <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row gap-4 items-center">
                   <div className="relative flex-1 w-full">
                     <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-3.5" />
@@ -1684,7 +1611,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Booking Success Alert */}
                 {bookingSuccess && (
                   <div className="bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-6 shadow-sm">
                     <div className="flex items-start space-x-3">
@@ -1715,9 +1641,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Doctor Selection & Slot Booking Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  {/* Doctor List */}
                   <div className="lg:col-span-5 space-y-4">
                     <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Available Doctors ({doctors.length})
@@ -1776,7 +1700,6 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Slot Booking Panel */}
                   <div className="lg:col-span-7">
                     {selectedDoctor ? (
                       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
@@ -1799,7 +1722,6 @@ export default function App() {
                           />
                         </div>
 
-                        {/* Available Slots */}
                         <div>
                           <div className="flex items-center justify-between mb-3">
                             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -1847,7 +1769,6 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* Active Slot Hold Timer & Symptoms Confirmation */}
                         {heldSlot && (
                           <div className="p-5 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-300 dark:border-teal-800 space-y-4">
                             <div className="flex items-center justify-between">
@@ -1904,7 +1825,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SUB-VIEW 2: MY APPOINTMENTS */}
             {patientTab === "my-appointments" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -1987,7 +1907,6 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* Appointment Actions */}
                         {appt.status === "CONFIRMED" && (
                           <div className="flex space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                             <button
@@ -2017,7 +1936,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SUB-VIEW 3: MY MEDICATIONS */}
             {patientTab === "medications" && (
               <div className="space-y-6">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Active Prescriptions & Reminders</h2>
@@ -2064,12 +1982,8 @@ export default function App() {
           </>
         )}
 
-        {/* =================================================================== */}
-        {/* ROLE B: DOCTOR VIEW                                                 */}
-        {/* =================================================================== */}
         {currentUser.role === "DOCTOR" && (
           <>
-            {/* SUB-VIEW 1: DOCTOR AGENDA */}
             {doctorTab === "doctor-agenda" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -2187,7 +2101,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SUB-VIEW 2: DOCTOR LEAVE MANAGEMENT */}
             {doctorTab === "doctor-leaves" && (
               <div className="space-y-6">
                 <div>
@@ -2198,7 +2111,6 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  {/* Leave Application Form */}
                   <div className="lg:col-span-5 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                     <h3 className="font-bold text-sm text-slate-900 dark:text-white">Request Leave Period</h3>
 
@@ -2254,7 +2166,6 @@ export default function App() {
                       </button>
                     </form>
 
-                    {/* Preview Conflict Card */}
                     {docLeavePreview && (
                       <div className="mt-4 p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 space-y-3">
                         <div className="flex items-center space-x-2 text-amber-800 dark:text-amber-300 text-xs font-bold">
@@ -2287,7 +2198,6 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Active / Approved Leaves */}
                   <div className="lg:col-span-7 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                     <h3 className="font-bold text-sm text-slate-900 dark:text-white">Your Leave Applications & History</h3>
 
@@ -2340,7 +2250,6 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Rejection Note Display */}
                             {leave.status === "REJECTED" && (
                               <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-200 space-y-1">
                                 <div className="font-semibold flex items-center space-x-1.5 text-rose-700 dark:text-rose-300">
@@ -2357,7 +2266,6 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* Disrupted Appointments from Approved Leaves */}
                     {doctorAgenda.some((a) => a.status === "CANCELLED") && (
                       <div className="mt-6 p-5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/80 space-y-3">
                         <div className="flex items-center justify-between">
@@ -2407,12 +2315,8 @@ export default function App() {
           </>
         )}
 
-        {/* =================================================================== */}
-        {/* ROLE C: ADMIN VIEW                                                  */}
-        {/* =================================================================== */}
         {currentUser.role === "ADMIN" && (
           <>
-            {/* SUB-VIEW 1: EXECUTIVE STATS */}
             {adminTab === "admin-stats" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -2448,7 +2352,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SUB-VIEW 2: DOCTOR ROSTERS */}
             {adminTab === "admin-doctors" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -2497,7 +2400,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SUB-VIEW 3: LEAVE OVERSEER & APPROVALS */}
             {adminTab === "admin-leaves" && (
               <div className="space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2508,7 +2410,6 @@ export default function App() {
                     </p>
                   </div>
 
-                  {/* Filter Tabs */}
                   <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex space-x-1 self-start md:self-auto border border-slate-200 dark:border-slate-700">
                     {["ALL", "PENDING", "APPROVED", "REJECTED"].map((st) => (
                       <button
@@ -2624,7 +2525,6 @@ export default function App() {
                                 </div>
                               </div>
 
-                              {/* Action buttons for PENDING leaves */}
                               {leave.status === "PENDING" && (
                                 <div className="flex items-center space-x-2 self-start md:self-center">
                                   <button
@@ -2653,7 +2553,6 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Show rejection reason note if rejected */}
                             {leave.status === "REJECTED" && (
                               <div className="mt-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-200 space-y-1">
                                 <div className="font-bold flex items-center space-x-1.5 text-rose-700 dark:text-rose-300">
@@ -2672,7 +2571,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SUB-VIEW 4: PATIENTS DIRECTORY */}
             {adminTab === "admin-patients" && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -2712,7 +2610,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SUB-VIEW 5: JOB MONITOR */}
             {adminTab === "admin-jobs" && (
               <div className="space-y-6">
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Background Job Queue Monitor</h2>
@@ -2745,11 +2642,6 @@ export default function App() {
 
       </main>
 
-      {/* =================================================================== */}
-      {/* MODALS (Consultation & AI Notes, Notifications, Reschedule, Cancel) */}
-      {/* =================================================================== */}
-
-      {/* Modal 1: Doctor Consultation & AI SOAP Notes */}
       {consultationModalAppt && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-6 shadow-2xl space-y-6 my-8">
@@ -2770,7 +2662,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* AI Assistant Generator (Gemini AI Only) */}
             <div className="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2 text-indigo-900 dark:text-indigo-200 font-bold text-xs">
@@ -2816,7 +2707,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Clinical SOAP Fields */}
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
@@ -2858,7 +2748,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Prescription Drawer */}
               <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
@@ -2949,7 +2838,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal 2: Notification Center */}
       {showNotifModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
@@ -2993,7 +2881,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal 3: Cancel Appointment Modal */}
       {cancellingAppt && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -3027,7 +2914,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal 4: Reschedule Modal */}
       {reschedulingAppt && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
@@ -3104,7 +2990,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal 5: Admin Leave Rejection Reason */}
       {adminRejectingLeave && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
@@ -3171,7 +3056,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal 6: Admin Register New Doctor */}
       {adminRegisterDoctorModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-4 my-8">
@@ -3338,9 +3222,6 @@ export default function App() {
         </div>
       )}
 
-      {/* =================================================================== */}
-      {/* RESCHEDULE APPOINTMENT MODAL (For Doctor & Patient)                */}
-      {/* =================================================================== */}
       {reschedulingAppt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
@@ -3375,7 +3256,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Date Selection */}
             <div className="space-y-2">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Select New Appointment Date
@@ -3392,7 +3272,6 @@ export default function App() {
               />
             </div>
 
-            {/* Available Slots */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -3443,7 +3322,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Optional Reschedule Reason */}
             <div className="space-y-1">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Reschedule Note / Reason (Optional)
@@ -3457,7 +3335,6 @@ export default function App() {
               />
             </div>
 
-            {/* Actions */}
             <div className="flex justify-end space-x-2 pt-3 border-t border-slate-200 dark:border-slate-800">
               <button
                 type="button"
@@ -3489,7 +3366,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal 5: Forgot Password & OTP Reset Modal */}
       {forgotPasswordModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-6 my-8">
@@ -3518,7 +3394,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Error / Success Alerts */}
             {forgotPasswordError && (
               <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 text-xs flex items-start space-x-2.5">
                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -3532,7 +3407,6 @@ export default function App() {
               </div>
             )}
 
-            {/* STEP 1: Enter Email */}
             {forgotPasswordStep === "email" && (
               <form onSubmit={handleRequestForgotPasswordOtp} className="space-y-4">
                 <div>
@@ -3572,7 +3446,6 @@ export default function App() {
               </form>
             )}
 
-            {/* STEP 2: Enter OTP & New Password */}
             {forgotPasswordStep === "otp_and_password" && (
               <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
                 <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs">
@@ -3698,7 +3571,6 @@ export default function App() {
               </form>
             )}
 
-            {/* STEP 3: Success State */}
             {forgotPasswordStep === "success" && (
               <div className="text-center space-y-4 py-4">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-inner">

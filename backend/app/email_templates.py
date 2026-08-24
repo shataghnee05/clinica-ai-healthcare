@@ -143,7 +143,6 @@ def _base_html_layout(title: str, preheader: str, content_html: str) -> str:
 </html>
 """
 
-
 def template_appointment_confirmation(
     patient_name: str,
     doctor_name: str,
@@ -195,7 +194,6 @@ def template_appointment_confirmation(
     html = _base_html_layout(subject, f"Your appointment with {doctor_name} on {date_time_str} is confirmed.", content_html)
     return subject, plain_text, html
 
-
 def template_appointment_cancellation(
     patient_name: str,
     doctor_name: str,
@@ -238,7 +236,6 @@ def template_appointment_cancellation(
     html = _base_html_layout(subject, f"Your appointment with {doctor_name} has been cancelled.", content_html)
     return subject, plain_text, html
 
-
 def template_doctor_leave(
     patient_name: str,
     doctor_name: str,
@@ -267,7 +264,6 @@ def template_doctor_leave(
     """
     html = _base_html_layout(subject, f"Notice regarding your appointment with {doctor_name}.", content_html)
     return subject, plain_text, html
-
 
 def template_appointment_reminder(
     patient_name: str,
@@ -308,7 +304,6 @@ def template_appointment_reminder(
     """
     html = _base_html_layout(subject, f"Reminder: Your appointment with {doctor_name} is on {date_time_str}.", content_html)
     return subject, plain_text, html
-
 
 def template_medication_reminder(
     patient_name: str,
@@ -351,7 +346,6 @@ def template_medication_reminder(
     """
     html = _base_html_layout(subject, f"Time to take your medication: {medication_name} ({dosage}).", content_html)
     return subject, plain_text, html
-
 
 def template_password_reset_otp(
     user_name: str,

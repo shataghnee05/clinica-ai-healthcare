@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any
 from app.ai.schemas import PreVisitSummaryResult, PostVisitSummaryResult
 
-
 class LLMProvider(ABC):
     """Abstract base protocol for AI providers."""
 

@@ -49,9 +49,6 @@ from app.email_templates import (
 
 logger = logging.getLogger(__name__)
 
-
-# ── Notification Record & Job Helpers ────────────────────────────────────────
-
 def _create_notification(
     db: Session,
     user_id: str,
@@ -74,7 +71,6 @@ def _create_notification(
     db.flush()
     return notif
 
-
 def _enqueue_notification_job(
     db: Session,
     job_type: JobType,
@@ -93,9 +89,6 @@ def _enqueue_notification_job(
     db.add(job)
     db.flush()
     return job
-
-
-# ── Notification Service Core ────────────────────────────────────────────────
 
 class NotificationService:
     """
@@ -117,7 +110,6 @@ class NotificationService:
             specialization = appointment.doctor.specialization if appointment.doctor else "General"
             start_str = appointment.slot.start_time.strftime("%A, %B %d, %Y at %I:%M %p UTC") if appointment.slot and appointment.slot.start_time else "Scheduled Time"
 
-            # 1. Patient Notification
             subject, plain_text, html_content = template_appointment_confirmation(
                 patient_name=patient.full_name if patient else "Patient",
                 doctor_name=doctor_name,
@@ -144,7 +136,6 @@ class NotificationService:
             })
             notif.job_id = job.id
 
-            # 2. Doctor Notification (if doctor account exists)
             if doctor_user and doctor_user.email:
                 doc_title = f"New Appointment Booked: {patient.full_name if patient else 'Patient'}"
                 doc_body = (
@@ -197,7 +188,6 @@ class NotificationService:
             doctor_name = f"Dr. {doctor_user.full_name}" if doctor_user else "your doctor"
             start_str = appointment.slot.start_time.strftime("%A, %B %d, %Y at %I:%M %p UTC") if appointment.slot and appointment.slot.start_time else "Scheduled Time"
 
-            # 1. Patient Notification
             subject, plain_text, html_content = template_appointment_cancellation(
                 patient_name=patient.full_name if patient else "Patient",
                 doctor_name=doctor_name,
@@ -223,7 +213,6 @@ class NotificationService:
             })
             notif.job_id = job.id
 
-            # 2. Doctor Notification
             if doctor_user and doctor_user.email:
                 doc_title = f"Appointment Cancelled: {patient.full_name if patient else 'Patient'}"
                 doc_body = (
@@ -396,12 +385,11 @@ class NotificationService:
             reminder_time = start_time - timedelta(hours=lead_hours)
 
             if start_time <= now:
-                # Appointment is in the past
+
                 return None
 
             scheduled_at = reminder_time if reminder_time > now else now
 
-            # Guard against duplicate pending reminder jobs for this appointment
             existing_jobs = db.query(BackgroundJob).filter(
                 BackgroundJob.job_type == JobType.NOTIFY_APPOINTMENT_REMINDER,
                 BackgroundJob.status.in_([JobStatus.PENDING, JobStatus.PROCESSING]),
@@ -466,7 +454,6 @@ class NotificationService:
             specialization = appointment.doctor.specialization if appointment.doctor else "General"
             start_str = appointment.slot.start_time.strftime("%A, %B %d, %Y at %I:%M %p UTC") if appointment.slot and appointment.slot.start_time else "Scheduled Time"
 
-            # 1. Patient Notification
             subject, plain_text, html_content = template_appointment_reminder(
                 patient_name=patient.full_name if patient else "Patient",
                 doctor_name=doctor_name,
@@ -492,7 +479,6 @@ class NotificationService:
             })
             notif.job_id = job.id
 
-            # 2. Doctor Notification
             if doctor_user and doctor_user.email:
                 doc_title = f"Upcoming Appointment Reminder: {patient.full_name if patient else 'Patient'}"
                 doc_body = (
@@ -529,7 +515,7 @@ class NotificationService:
     @staticmethod
     def enqueue_medication_reminders(
         db: Session,
-        reminders: list,   # list[MedicationReminder]
+        reminders: list,
         patient: User,
     ) -> int:
         """
@@ -539,7 +525,7 @@ class NotificationService:
         count = 0
         for reminder in reminders:
             try:
-                # Check for existing duplicate job for this reminder
+
                 if reminder.job_id:
                     existing = db.query(BackgroundJob).filter(BackgroundJob.id == reminder.job_id).first()
                     if existing:
@@ -570,8 +556,6 @@ class NotificationService:
             except Exception as exc:
                 logger.error("Failed to enqueue medication reminder %s: %s", reminder.id, exc)
         return count
-
-    # ── Job Execution Handlers (Executed by Background Job Workers) ──────────
 
     @staticmethod
     def execute_appointment_reminder_job(db: Session, job: BackgroundJob) -> None:
@@ -610,7 +594,6 @@ class NotificationService:
 
         provider = get_email_provider()
 
-        # 1. Patient Notification & Email
         if patient:
             subject, plain_text, html_content = template_appointment_reminder(
                 patient_name=patient.full_name or "Patient",
@@ -633,7 +616,6 @@ class NotificationService:
                 patient_notif.email_sent = p_success
                 patient_notif.email_error = p_error
 
-        # 2. Doctor Notification & Email
         if doctor_user and doctor_user.email:
             doc_subject = f"Upcoming Appointment Reminder: {patient.full_name if patient else 'Patient'}"
             doc_body = (
@@ -687,7 +669,7 @@ class NotificationService:
             db.commit()
 
         if not success and error:
-            # Re-raise so JobManager increments attempts and schedules exponential backoff
+
             raise RuntimeError(f"Email delivery failed: {error}")
 
     @staticmethod
@@ -719,7 +701,6 @@ class NotificationService:
             reminder.status = MedicationReminderStatus.FAILED
             reminder.error_message = error
 
-        # Create in-app notification for patient
         if reminder.patient_id:
             notif = _create_notification(
                 db=db,
@@ -736,5 +717,5 @@ class NotificationService:
         db.commit()
 
         if not success and error:
-            # Re-raise so JobManager increments attempts and schedules exponential backoff
+
             raise RuntimeError(f"Medication reminder delivery failed: {error}")

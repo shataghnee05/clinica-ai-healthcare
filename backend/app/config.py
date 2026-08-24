@@ -4,7 +4,6 @@ from typing import List, Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Determine project directories
 _current_dir = Path(__file__).resolve().parent
 _backend_dir = _current_dir.parent
 _project_root = _backend_dir.parent
@@ -46,7 +45,7 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.6-flash"
-    # Phase 2B & Email Notification Settings (Resend, SMTP, Mock)
+
     EMAIL_PROVIDER: str = "resend"
     RESEND_API_KEY: str = ""
     SMTP_HOST: str = ""
@@ -57,7 +56,6 @@ class Settings(BaseSettings):
     NOTIFICATION_ENABLED: bool = True
     APPOINTMENT_REMINDER_HOURS_BEFORE: int = 24
 
-    # Google OAuth 2.0 & Google Calendar settings
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:5173/auth/google/callback"
