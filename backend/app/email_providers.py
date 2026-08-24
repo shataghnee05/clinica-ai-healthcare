@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 RESEND_API_URL = "https://api.resend.com/emails"
 
 
+try:
+    import resend
+    HAS_RESEND_SDK = True
+except ImportError:
+    HAS_RESEND_SDK = False
+
+
 class BaseEmailProvider(abc.ABC):
     """Abstract email provider interface."""
 
@@ -43,7 +50,7 @@ class BaseEmailProvider(abc.ABC):
 class ResendEmailProvider(BaseEmailProvider):
     """
     Resend API Email Provider.
-    Sends transactional emails via Resend's REST API.
+    Sends transactional emails via Resend SDK or REST API.
     """
 
     def __init__(self, api_key: Optional[str] = None, from_email: Optional[str] = None):
@@ -68,6 +75,35 @@ class ResendEmailProvider(BaseEmailProvider):
             log_event("EMAIL_SENT_SIMULATED", {"provider": "resend", "to": to_email, "subject": subject})
             return True, None
 
+        html_content = (
+            html_body
+            if html_body
+            else f"<div style='font-family:sans-serif;line-height:1.6;color:#333;'><pre style='white-space:pre-wrap;font-family:sans-serif;'>{body}</pre></div>"
+        )
+
+        # 1. Use official Resend SDK if installed
+        if HAS_RESEND_SDK:
+            try:
+                resend.api_key = self.api_key
+                params = {
+                    "from": self.from_email,
+                    "to": [to_email],
+                    "subject": subject,
+                    "text": body,
+                    "html": html_content,
+                }
+                res = resend.Emails.send(params)
+                email_id = res.get("id") if isinstance(res, dict) else getattr(res, "id", str(res))
+                logger.info(f"[Resend] Email successfully sent to {to_email} (ID: {email_id})")
+                log_event("EMAIL_SENT", {"provider": "resend", "to": to_email, "subject": subject, "email_id": email_id})
+                return True, None
+            except Exception as exc:
+                error_msg = f"Resend SDK error: {str(exc)}"
+                logger.error(f"[Resend] {error_msg}")
+                log_event("EMAIL_FAILED", {"provider": "resend", "to": to_email, "subject": subject, "error": error_msg})
+                return False, error_msg
+
+        # 2. Direct REST API Fallback via HTTPX
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -78,11 +114,8 @@ class ResendEmailProvider(BaseEmailProvider):
             "to": [to_email],
             "subject": subject,
             "text": body,
+            "html": html_content,
         }
-        if html_body:
-            payload["html"] = html_body
-        else:
-            payload["html"] = f"<div style='font-family:sans-serif;line-height:1.6;color:#333;'><pre style='white-space:pre-wrap;font-family:sans-serif;'>{body}</pre></div>"
 
         try:
             with httpx.Client(timeout=15.0) as client:
